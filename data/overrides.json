@@ -1,0 +1,7 @@
+{
+  "_comment": "Wikidata'nın henüz işlemediği transferler/düzeltmeler için elle eklemeler. Anahtar: oyuncu Wikidata ID, değer: kulüp Wikidata ID listesi. Uygulamak için npm run build-data çalıştır.",
+  "add": {
+    "Q6509762": ["Q172567"]
+  },
+  "remove": {}
+}

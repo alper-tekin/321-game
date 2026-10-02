@@ -21,6 +21,10 @@ Kulüp ve oyuncu verisi [Wikidata](https://www.wikidata.org)'dan çekilir ve `da
 npm run build-data
 ```
 
+Wikidata bazen güncel transferleri geç işler. `data/overrides.json` dosyasıyla eksik kulüp kayıtları
+elle eklenebilir (örn. Trossard'ın Beşiktaş transferi). Düzenledikten sonra `npm run build-data`
+çalıştırın. Wikidata kaydı düzeldiğinde override'ı kaldırmak yeterli.
+
 ## Test
 
 ```bash

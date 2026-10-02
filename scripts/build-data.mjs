@@ -172,6 +172,33 @@ function pickName(entry) {
   return entry?.tr || entry?.en || entry?.mul || null;
 }
 
+// Wikidata'nın henüz işlemediği transferler için elle düzeltmeler (data/overrides.json).
+// Format: { "add": { "<oyuncu QID>": ["<kulüp QID>", ...] }, "remove": { ... } }
+async function applyOverrides(clubs, playerClubs) {
+  let overrides;
+  try {
+    overrides = JSON.parse(await fs.readFile(path.join(ROOT, 'data', 'overrides.json'), 'utf8'));
+  } catch {
+    return; // dosya yoksa geç
+  }
+  const clubIds = new Set(clubs.map((c) => c.id));
+  let applied = 0;
+  for (const [pid, add] of Object.entries(overrides.add ?? {})) {
+    const set = playerClubs.get(pid);
+    if (!set) continue; // oyuncu Wikidata verisinde hiç yoksa dokunma
+    for (const cid of add) {
+      if (!clubIds.has(cid)) { console.warn(`  override uyarısı: kulüp listede yok, atlandı: ${cid}`); continue; }
+      if (!set.has(cid)) { set.add(cid); applied++; }
+    }
+  }
+  for (const [pid, remove] of Object.entries(overrides.remove ?? {})) {
+    const set = playerClubs.get(pid);
+    if (!set) continue;
+    for (const cid of remove) if (set.delete(cid)) applied++;
+  }
+  if (applied) console.log(`  ${applied} elle düzeltme uygulandı (overrides.json)`);
+}
+
 function aliasList(entry, name) {
   const all = new Set([entry.tr, entry.en, entry.mul, ...entry.aliases].filter(Boolean));
   all.delete(name);
@@ -199,6 +226,7 @@ async function main() {
     playerClubs.get(p).add(c);
     playerPop.set(p, pl);
   }
+  applyOverrides(clubs, playerClubs);
   const playerIds = [...playerClubs.keys()].filter((p) => playerClubs.get(p).size >= 2);
   console.log(`  ${playerClubs.size} oyuncu bulundu, ${playerIds.length} tanesi en az 2 kulüpte oynamış`);
 

@@ -68,3 +68,10 @@ test('Real Madrid + Manchester United (Cristiano Ronaldo)', () => {
 test('Real Madrid + PSG (Di María)', () => {
   assert.ok(accepts('Real Madrid CF', 'Paris Saint-Germain', 'Di Maria'));
 });
+
+// Wikidata gecikmesi düzeltmesi: Trossard'ın Beşiktaş transferi (Temmuz 2026)
+// Wikidata'ya işlenmediği için data/overrides.json ile ekleniyor.
+test('Beşiktaş + Arsenal (Trossard)', () => {
+  assert.ok(accepts('Beşiktaş', 'Arsenal FC', 'Trossard'));
+  assert.ok(accepts('Beşiktaş', 'Arsenal FC', 'Leandro Trossard'));
+});
