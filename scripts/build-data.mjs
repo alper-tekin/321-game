@@ -125,13 +125,19 @@ async function cachedById(name, ids, batchSize, fetchBatch) {
   return ids.flatMap((id) => store[id]);
 }
 
+// DİKKAT: wdt:P54 (truthy görünüm) burada KULLANILMAZ. Wikidata'nın SPARQL servisindeki
+// truthy indeksi bazı oyuncularda NormalRank kayıtları eksik döndürüyor (örn. Q701297 Mateo
+// Kovačić, Q11571 Cristiano Ronaldo Real Madrid kayıtlarıyla hiç görünmüyordu; bkz. p:P54
+// statement görünümünde kayıtlar mevcut). Bu yüzden statement görünümü + rank filtresi kullanılıyor.
 async function fetchMemberships(clubs) {
   console.log('Kulüp-oyuncu ilişkileri çekiliyor...');
-  return cachedById('members', clubs.map((c) => c.id), CLUB_BATCH, async (batch) => {
+  return cachedById('members-v2', clubs.map((c) => c.id), CLUB_BATCH, async (batch) => {
     const r = await sparql(`
       SELECT ?c ?p ?pl WHERE {
         VALUES ?c { ${batch.map((id) => `wd:${id}`).join(' ')} }
-        ?p wdt:P54 ?c; wdt:P31 wd:Q5; wikibase:sitelinks ?pl.
+        ?p p:P54 ?st; wdt:P31 wd:Q5; wikibase:sitelinks ?pl.
+        ?st ps:P54 ?c; wikibase:rank ?rank.
+        FILTER(?rank != wikibase:DeprecatedRank)
       }`);
     await sleep(500);
     return r.map((x) => [qid(x.c.value), qid(x.p.value), Number(x.pl.value)]);

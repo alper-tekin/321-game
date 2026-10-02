@@ -52,3 +52,19 @@ test('Barcelona + Inter (Eto\'o, Ibrahimović)', () => {
   assert.ok(accepts('FC Barcelona', 'Inter Milan', "Eto'o"));
   assert.ok(accepts('FC Barcelona', 'Inter Milan', 'Ibrahimovic'));
 });
+
+// Wikidata SPARQL truthy indeksindeki eksik NormalRank kayıtları yüzünden
+// tamamen kaybolan oyuncular için regresyon testleri (Kovačić, Ronaldo, Di María).
+test('Real Madrid + Chelsea (Kovacic)', () => {
+  assert.ok(accepts('Real Madrid CF', 'Chelsea FC', 'Kovacic'));
+  assert.ok(accepts('Real Madrid CF', 'Chelsea FC', 'Mateo Kovacic'));
+});
+
+test('Real Madrid + Manchester United (Cristiano Ronaldo)', () => {
+  assert.ok(accepts('Real Madrid CF', 'Manchester United FC', 'Cristiano Ronaldo'));
+  assert.ok(accepts('Real Madrid CF', 'Manchester United FC', 'Ronaldo'));
+});
+
+test('Real Madrid + PSG (Di María)', () => {
+  assert.ok(accepts('Real Madrid CF', 'Paris Saint-Germain', 'Di Maria'));
+});
