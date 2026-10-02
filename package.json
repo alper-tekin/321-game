@@ -1,0 +1,18 @@
+{
+  "name": "321-game",
+  "version": "1.0.0",
+  "description": "3-2-1 futbol oyunu: iki takımda da oynamış oyuncuyu ilk bulan kazanır",
+  "type": "module",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "build-data": "node scripts/build-data.mjs",
+    "test": "node --test test/*.test.mjs"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "ws": "^8.18.0"
+  }
+}
