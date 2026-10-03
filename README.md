@@ -14,12 +14,14 @@ Oyun `http://localhost:3210` adresinde açılır. Aynı Wi-Fi'daki telefondan bi
 
 ## Veri
 
-Kulüp ve oyuncu verisi [Wikidata](https://www.wikidata.org)'dan çekilir ve `data/football.json` dosyasına yazılır
-(yaklaşık 1.600 kulüp, 100 bin oyuncu). Veriyi güncellemek için (birkaç dakika sürer):
+Veri üç açık kaynaktan birleşir (`npm run build-data`, birkaç dakika sürer):
 
-```bash
-npm run build-data
-```
+1. **[Wikidata](https://www.wikidata.org)** (CC0) — kulüpler, oyuncular, tarihi kulüp kayıtları,
+   Türkçe/İngilizce isim ve takma adlar
+2. **[Transfermarkt transfer geçmişi](https://github.com/dcaribou/transfermarkt-datasets)** (CC0) —
+   Wikidata'nın kaçırdığı tarihi transferler (veri seti 6 Temmuz 2026'ya kadar)
+3. **Wikipedia güncel kadroları** (CC BY-SA) — kulüplerin İngilizce Wikipedia kadro şablonları;
+   yeni transferler burada hızla güncellenir
 
 Wikidata bazen güncel transferleri geç işler. `data/overrides.json` dosyasıyla eksik kulüp kayıtları
 elle eklenebilir (örn. Trossard'ın Beşiktaş transferi). Düzenledikten sonra `npm run build-data`

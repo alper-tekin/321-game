@@ -4,6 +4,8 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { gunzipSync } from 'node:zlib';
+import { normalize } from '../public/normalize.js';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const CACHE_DIR = path.join(ROOT, 'scripts', '.cache');
@@ -172,6 +174,363 @@ function pickName(entry) {
   return entry?.tr || entry?.en || entry?.mul || null;
 }
 
+// ---------- Transfermarkt transfer geçmişi ----------
+// Wikidata'nın P54 kulüp kayıtları son dönem transferlerinin yarısından çoğunu kaçırıyor.
+// Bu yüzden dcaribou/transfermarkt-datasets (CC0) transfer tablosu ikincil kaynak olarak
+// birleştirilir. Veri seti 6 Temmuz 2026'da donmuş durumda; güncellenirse önbellek dosyası
+// silinip yeniden indirilir.
+const TM_TRANSFERS_URL = 'https://pub-e682421888d945d684bcae8890b0ec20.r2.dev/data/transfers.csv.gz';
+
+function parseCsvLine(line) {
+  const out = [];
+  let cur = '', inQ = false;
+  for (let i = 0; i < line.length; i++) {
+    const ch = line[i];
+    if (inQ) {
+      if (ch === '"' && line[i + 1] === '"') { cur += '"'; i++; }
+      else if (ch === '"') inQ = false;
+      else cur += ch;
+    } else if (ch === '"') inQ = true;
+    else if (ch === ',') { out.push(cur); cur = ''; }
+    else cur += ch;
+  }
+  out.push(cur);
+  return out;
+}
+
+async function fetchTmTransfers() {
+  const file = path.join(CACHE_DIR, 'tm-transfers.csv.gz');
+  let buf;
+  try {
+    buf = await fs.readFile(file);
+  } catch {
+    console.log('  Transfermarkt veri seti indiriliyor (~5 MB)...');
+    const res = await fetch(TM_TRANSFERS_URL);
+    if (!res.ok) throw new Error(`indirme hatası ${res.status}`);
+    buf = Buffer.from(await res.arrayBuffer());
+    await fs.writeFile(file, buf);
+  }
+  const raw = gunzipSync(buf).toString('utf8');
+  const lines = raw.split('\n');
+  const header = lines[0].split(',').map((h) => h.replace(/"/g, ''));
+  const col = (name) => header.indexOf(name);
+  const today = new Date().toISOString().slice(0, 10);
+  const out = [];
+  for (let i = 1; i < lines.length; i++) {
+    if (!lines[i]) continue;
+    const v = parseCsvLine(lines[i]);
+    const date = v[col('transfer_date')];
+    if (!date || date > today) continue; // gelecek tarihli ön sözleşmeler sayılmaz
+    out.push({
+      playerId: v[col('player_id')],
+      player: v[col('player_name')],
+      from: v[col('from_club_name')],
+      to: v[col('to_club_name')],
+    });
+  }
+  return out;
+}
+
+// TM kulüp adları ("Bayern Munich", "Mainz") bizim kulüplerle eşlenir.
+// Önce tam isim/takma ad eşleşmesi, olmazsa belirgin kelime alt kümesi eşleşmesi.
+// Dönüş: kulübün Wikidata kimliği veya null. (playerClubs kulübü kimlik olarak saklar.)
+const GENERIC_CLUB_TOKENS = new Set(['fc', 'cf', 'ac', 'sc', 'afc', 'cfc', 'if', 'bk', 'fk', 'sk', 'ik', 'cd', 'ud', 'sd', 'as', 'ss', 'us', 'club', 'de', 'the', 'football', 'futbol', 'spor', 'kulubu', 'calcio', 'fussball']);
+
+function buildClubMatcher(clubs) {
+  const byName = new Map();
+  const tokenSets = [];
+  clubs.forEach((c, i) => {
+    const names = [...new Set([c.name, ...c.aliases].map(normalize).filter(Boolean))];
+    for (const n of names) {
+      if (!byName.has(n)) byName.set(n, new Set());
+      byName.get(n).add(i);
+    }
+    tokenSets.push(new Set([...new Set(names.flatMap((n) => n.split(' ')))].filter((t) => !GENERIC_CLUB_TOKENS.has(t))));
+  });
+  return (name) => {
+    const k = normalize(name);
+    if (!k) return null;
+    const direct = byName.get(k);
+    if (direct) return direct.size === 1 ? clubs[[...direct][0]].id : null;
+    const toks = [...new Set(k.split(' ').filter((t) => !GENERIC_CLUB_TOKENS.has(t)))];
+    if (!toks.length) return null;
+    let hit = -1;
+    for (let i = 0; i < tokenSets.length; i++) {
+      if (toks.every((t) => tokenSets[i].has(t))) {
+        if (hit >= 0) return null; // birden fazla kulüple eşleşiyor, belirsiz
+        hit = i;
+      }
+    }
+    return hit >= 0 ? clubs[hit].id : null;
+  };
+}
+
+// Önceki build'in oyuncu listesiyle isim -> kimlik eşleşmesi (ikincil kaynakları bağlamak için)
+function buildPlayerMatcher(prevPlayers) {
+  const byName = new Map();
+  const add = (n, id) => {
+    const k = normalize(n);
+    if (!k) return;
+    if (!byName.has(k)) byName.set(k, []);
+    const arr = byName.get(k);
+    if (!arr.includes(id)) arr.push(id);
+  };
+  for (const p of prevPlayers) for (const n of [p.name, ...p.aliases]) add(n, p.id);
+  return byName;
+}
+
+async function loadPrevPlayers() {
+  try {
+    const prev = JSON.parse(await fs.readFile(OUT_FILE, 'utf8'));
+    return prev.players ?? [];
+  } catch {
+    return [];
+  }
+}
+
+// Transfermarkt transferlerini Wikidata verisiyle birleştirir.
+// Dönüş: tm- kimlikli yeni oyuncuların isim haritası.
+async function mergeTmTransfers(clubs, playerClubs, playerPop, playerByName) {
+  console.log('Transfermarkt transfer geçmişi birleştiriliyor...');
+  const tmNames = new Map();
+  try {
+    const transfers = await fetchTmTransfers();
+    const matchClub = buildClubMatcher(clubs);
+
+    const clubCache = new Map();
+    const resolveClub = (name) => {
+      if (!clubCache.has(name)) clubCache.set(name, matchClub(name));
+      return clubCache.get(name);
+    };
+
+    // TM oyuncu kimliğine göre tüm transferleri topla
+    const tmPlayers = new Map();
+    for (const t of transfers) {
+      if (!t.playerId || !t.player) continue;
+      const from = t.from ? resolveClub(t.from) : null;
+      const to = t.to ? resolveClub(t.to) : null;
+      if (!from && !to) continue;
+      if (!tmPlayers.has(t.playerId)) tmPlayers.set(t.playerId, { name: t.player, clubs: new Set() });
+      const p = tmPlayers.get(t.playerId);
+      if (from) p.clubs.add(from);
+      if (to) p.clubs.add(to);
+    }
+
+    let added = 0, created = 0, ambiguous = 0;
+    for (const [tmId, tp] of tmPlayers) {
+      const candidates = playerByName.get(normalize(tp.name)) ?? [];
+      let target = null;
+      if (candidates.length === 1) target = candidates[0];
+      else if (candidates.length > 1) {
+        // Aynı isimde birden fazla oyuncu varsa kulüp örtüşmesiyle ayıkla
+        const withOverlap = candidates.filter((id) => {
+          const set = playerClubs.get(id);
+          return set && [...tp.clubs].some((c) => set.has(c));
+        });
+        if (withOverlap.length === 1) target = withOverlap[0];
+        else ambiguous++;
+      }
+      if (target) {
+        const set = playerClubs.get(target);
+        if (!set) continue;
+        for (const c of tp.clubs) if (!set.has(c)) { set.add(c); added++; }
+      } else if (!candidates.length && tp.clubs.size >= 2) {
+        // Wikidata'da hiç bulunmayan oyuncu: en az 2 seçilebilir kulübü varsa oyuna ekle
+        const id = `tm-${tmId}`;
+        playerClubs.set(id, new Set(tp.clubs));
+        playerPop.set(id, 0);
+        tmNames.set(id, tp.name);
+        created++;
+      }
+    }
+    console.log(`  ${added} kulüp kaydı eklendi, ${created} yeni oyuncu, ${ambiguous} belirsiz isim atlandı`);
+  } catch (err) {
+    console.warn('  Transfermarkt birleşimi atlandı:', err.message);
+  }
+  return tmNames;
+}
+
+// ---------- Wikipedia güncel kadroları ----------
+// Kulüplerin İngilizce Wikipedia kadro şablonları ("Template:X squad") transferlerden
+// günler sonra güncellenir; Wikidata'nın eksik kaldığı güncel kayıtları buradan alınır.
+
+const WIKI_UA = '321-game-data-builder/1.0 (hobby football quiz)';
+
+async function wikiApi(params, attempt = 1) {
+  const url = new URL('https://en.wikipedia.org/w/api.php');
+  for (const [k, v] of Object.entries(params)) url.searchParams.set(k, v);
+  url.searchParams.set('maxlag', '5');
+  const res = await fetch(url, { headers: { 'User-Agent': WIKI_UA } });
+  if (res.status === 429 || res.status >= 500) {
+    if (attempt >= 6) throw new Error(`Wikipedia API ${res.status}`);
+    const retryAfter = Number(res.headers.get('retry-after')) || 0;
+    const wait = Math.max(retryAfter * 1000, 2000 * 2 ** attempt);
+    console.warn(`  Wikipedia API ${res.status}, ${Math.round(wait / 1000)} sn bekleniyor...`);
+    await sleep(wait);
+    return wikiApi(params, attempt + 1);
+  }
+  if (!res.ok) throw new Error(`Wikipedia API ${res.status}`);
+  const j = await res.json();
+  if (j.error) throw new Error(`Wikipedia API: ${j.error.info}`);
+  await sleep(250);
+  return j;
+}
+
+async function wikidataApi(params, attempt = 1) {
+  const url = new URL('https://www.wikidata.org/w/api.php');
+  for (const [k, v] of Object.entries(params)) url.searchParams.set(k, v);
+  const res = await fetch(url, { headers: { 'User-Agent': USER_AGENT } });
+  if (res.status === 429 || res.status >= 500) {
+    if (attempt >= 6) throw new Error(`Wikidata API ${res.status}`);
+    const retryAfter = Number(res.headers.get('retry-after')) || 0;
+    const wait = Math.max(retryAfter * 1000, 2000 * 2 ** attempt);
+    console.warn(`  Wikidata API ${res.status}, ${Math.round(wait / 1000)} sn bekleniyor...`);
+    await sleep(wait);
+    return wikidataApi(params, attempt + 1);
+  }
+  if (!res.ok) throw new Error(`Wikidata API ${res.status}`);
+  const j = await res.json();
+  if (j.error) throw new Error(`Wikidata API: ${j.error.info}`);
+  await sleep(200);
+  return j;
+}
+
+// Sayfaların wikitext'ini 25'li gruplar halinde çeker. Dönüş: sayfa başlığı -> wikitext
+async function fetchWikitexts(titles) {
+  const out = new Map();
+  for (const batch of chunk(titles, 25)) {
+    const j = await wikiApi({
+      action: 'query', prop: 'revisions', rvprop: 'content', rvslots: 'main',
+      format: 'json', formatversion: '2', titles: batch.join('|'),
+    });
+    for (const page of j.query?.pages ?? []) {
+      if (page.missing) continue;
+      const content = page.revisions?.[0]?.slots?.main?.content;
+      if (typeof content === 'string') out.set(page.title, content);
+    }
+  }
+  return out;
+}
+
+// Kadro satırları: {{football squad2 player|no=1|name=[[Oyuncu Adı|Kısa Ad]]}} vb.
+// (bir seviye iç içe şablon toleransıyla, örn. name={{flagicon|...}} [[Oyuncu]])
+const SQUAD_ROW_RE = /\{\{(?:football\s+squad2?\s+player|fs\d?\s+player)\s*\|(?:[^{}]|\{\{[^{}]*\}\})*?\}\}/gi;
+
+function parseSquadPlayerTitles(wikitext) {
+  const titles = [];
+  for (const m of wikitext.matchAll(SQUAD_ROW_RE)) {
+    const at = m[0].search(/\|\s*name\s*=/i);
+    if (at < 0) continue;
+    const link = m[0].slice(at).match(/\[\[([^\]|]+)/);
+    if (!link) continue;
+    const t = link[1].trim();
+    if (t && !/^(file|image|category):/i.test(t)) titles.push(t);
+  }
+  return titles;
+}
+
+// Makalede geçilen kulübe özel kadro şablonlarını bulur ("{{Beşiktaş J.K. squad}}" gibi)
+function findSquadTemplateNames(wikitext) {
+  const names = new Set();
+  for (const m of wikitext.matchAll(/\{\{([^{}\n]{0,150})\}\}/g)) {
+    const head = m[1].split('|')[0].trim();
+    if (!/\bsquad\b/i.test(head)) continue;
+    if (/^(football squad2? player|fs\d? player|football squad|fs|sports roster)$/i.test(head)) continue;
+    if (head.includes('=')) continue;
+    names.add(head);
+  }
+  return [...names];
+}
+
+async function applyWikiSquads(clubs, playerClubs, playerByName) {
+  console.log('Wikipedia güncel kadroları çekiliyor...');
+  try {
+    // Kulüp Wikidata kimliği -> İngilizce Wikipedia makale başlığı (önbellekli)
+    const titleRows = await cachedById('club-wiki-titles', clubs.map((c) => c.id), 50, async (batch) => {
+      const j = await wikidataApi({ action: 'wbgetentities', ids: batch.join('|'), props: 'sitelinks', format: 'json' });
+      const rows = [];
+      for (const [qid, ent] of Object.entries(j.entities ?? {})) {
+        const t = ent?.sitelinks?.enwiki?.title;
+        if (t) rows.push([qid, t]);
+      }
+      return rows;
+    });
+    const clubTitle = new Map(titleRows);
+
+    // Kulüp makalelerini çek, satır içi kadroları ve geçilen şablonları bul
+    const articleTitles = clubs.map((c) => clubTitle.get(c.id)).filter(Boolean);
+    console.log(`  ${articleTitles.length} kulüp makalesi okunuyor...`);
+    const articles = await fetchWikitexts(articleTitles);
+
+    const inlinePlayers = new Map(); // clubIdx -> oyuncu başlıkları
+    const clubTemplate = new Map();  // clubIdx -> kadro şablonu adı
+    let clubsRead = 0;
+    clubs.forEach((c, i) => {
+      const wikitext = clubTitle.get(c.id) ? articles.get(clubTitle.get(c.id)) : null;
+      if (!wikitext) return;
+      clubsRead++;
+      const players = parseSquadPlayerTitles(wikitext);
+      if (players.length) inlinePlayers.set(i, players);
+      const tpl = findSquadTemplateNames(wikitext);
+      if (tpl.length) clubTemplate.set(i, tpl[0]);
+    });
+
+    // Kadro şablonu sayfalarını çek
+    const templateTitles = [...new Set([...clubTemplate.values()])];
+    const templates = templateTitles.length
+      ? await fetchWikitexts(templateTitles.map((t) => `Template:${t}`))
+      : new Map();
+
+    const squadPlayers = new Map();
+    for (const [i, players] of inlinePlayers) squadPlayers.set(i, [...players]);
+    for (const [i, tpl] of clubTemplate) {
+      const rows = parseSquadPlayerTitles(templates.get(`Template:${tpl}`) ?? '');
+      if (rows.length) squadPlayers.set(i, [...(squadPlayers.get(i) ?? []), ...rows]);
+    }
+
+    // Oyuncu başlıklarını kimliğe çözümle: önce isim eşleşmesi, kalanı Wikidata API'siyle
+    const allTitles = new Set();
+    for (const list of squadPlayers.values()) for (const t of list) allTitles.add(t);
+    const titleToQid = new Map();
+    const unresolved = [];
+    for (const t of allTitles) {
+      const candidates = playerByName.get(normalize(t));
+      if (candidates?.length === 1) titleToQid.set(t, candidates[0]);
+      else unresolved.push(t);
+    }
+    if (unresolved.length) {
+      console.log(`  ${unresolved.length} oyuncu başlığı Wikidata ile çözümleniyor...`);
+      const rows = await cachedById('wiki-player-qids', unresolved, 50, async (batch) => {
+        const j = await wikidataApi({ action: 'wbgetentities', sites: 'enwiki', titles: batch.join('|'), props: 'info', format: 'json' });
+        const byTitle = new Map();
+        for (const [qid, ent] of Object.entries(j.entities ?? {})) if (ent?.title) byTitle.set(ent.title, qid);
+        const norm = new Map((j.normalize ?? []).map((n) => [n.from, n.to]));
+        const out = [];
+        for (const t of batch) {
+          const qid = byTitle.get(norm.get(t) ?? t);
+          if (qid) out.push([t, qid]);
+        }
+        return out;
+      });
+      for (const [t, qid] of rows) titleToQid.set(t, qid);
+    }
+
+    let added = 0;
+    for (const [clubIdx, titles] of squadPlayers) {
+      const clubQid = clubs[clubIdx].id;
+      for (const t of titles) {
+        const qid = titleToQid.get(t);
+        if (!qid || !playerClubs.has(qid)) continue;
+        const set = playerClubs.get(qid);
+        if (!set.has(clubQid)) { set.add(clubQid); added++; }
+      }
+    }
+    console.log(`  ${clubsRead} kulübün kadrosu okundu, ${added} oyuncu-kulüp ilişkisi eklendi`);
+  } catch (err) {
+    console.warn('  Wikipedia kadro taraması atlandı:', err.message);
+  }
+}
+
 // Wikidata'nın henüz işlemediği transferler için elle düzeltmeler (data/overrides.json).
 // Format: { "add": { "<oyuncu QID>": ["<kulüp QID>", ...] }, "remove": { ... } }
 async function applyOverrides(clubs, playerClubs) {
@@ -226,13 +585,25 @@ async function main() {
     playerClubs.get(p).add(c);
     playerPop.set(p, pl);
   }
-  applyOverrides(clubs, playerClubs);
+  // İkincil kaynaklar: Transfermarkt transfer geçmişi + Wikipedia güncel kadroları
+  // (isim eşleştirme için kulüplere isimlerini ekle; sıra playerClubs indeksleriyle aynı kalmalı)
+  const namedClubs = clubs.map((c) => {
+    const entry = clubLabels.get(c.id);
+    const name = pickName(entry);
+    return { id: c.id, name: name ?? '', aliases: entry ? aliasList(entry, name) : [] };
+  });
+  const prevPlayers = await loadPrevPlayers();
+  const playerByName = buildPlayerMatcher(prevPlayers);
+  const tmNames = await mergeTmTransfers(namedClubs, playerClubs, playerPop, playerByName);
+  await applyWikiSquads(clubs, playerClubs, playerByName);
+  await applyOverrides(clubs, playerClubs);
   const playerIds = [...playerClubs.keys()].filter((p) => playerClubs.get(p).size >= 2);
   console.log(`  ${playerClubs.size} oyuncu bulundu, ${playerIds.length} tanesi en az 2 kulüpte oynamış`);
 
   const countryIds = [...new Set(clubs.map((c) => c.country).filter(Boolean))];
   const countryLabels = await fetchLabels(countryIds, 'ulke');
-  const playerLabels = await fetchLabels(playerIds, 'oyuncu');
+  // Sadece Wikidata kimlikli oyuncular için etiket çekilir (tm- önekli olanların ismi Transfermarkt'tan gelir)
+  const playerLabels = await fetchLabels(playerIds.filter((id) => /^Q\d+$/.test(id)), 'oyuncu');
 
   const outClubs = clubs
     .map((c) => {
@@ -254,11 +625,11 @@ async function main() {
   const outPlayers = playerIds
     .map((p) => {
       const entry = playerLabels.get(p);
-      const name = pickName(entry);
+      const name = pickName(entry) ?? tmNames.get(p);
       if (!name) return null;
       const cl = [...playerClubs.get(p)].map((c) => clubIndex.get(c)).filter((i) => i !== undefined);
       if (cl.length < 2) return null;
-      return { id: p, name, aliases: aliasList(entry, name), pop: playerPop.get(p), clubs: cl };
+      return { id: p, name, aliases: entry ? aliasList(entry, name) : [], pop: playerPop.get(p) ?? 0, clubs: cl };
     })
     .filter(Boolean)
     .sort((a, b) => b.pop - a.pop);

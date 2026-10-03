@@ -75,3 +75,21 @@ test('Beşiktaş + Arsenal (Trossard)', () => {
   assert.ok(accepts('Beşiktaş', 'Arsenal FC', 'Trossard'));
   assert.ok(accepts('Beşiktaş', 'Arsenal FC', 'Leandro Trossard'));
 });
+
+// İkincil kaynakların regresyon testleri: Wikidata'nın kaçırdığı transferler
+// Transfermarkt birleşimi (tarih, 6 Temmuz 2026'ya kadar) ve Wikipedia güncel
+// kadro şablonlarından geliyor.
+test('Napoli + Torino (Giovanni Simeone, Transfermarkt)', () => {
+  assert.ok(accepts('SSC Napoli', 'Torino FC', 'Giovanni Simeone'));
+  assert.ok(accepts('SSC Napoli', 'Torino FC', 'Simeone'));
+});
+
+test('Bayern + Southampton (Daniel Peretz, Transfermarkt)', () => {
+  assert.ok(accepts('FC Bayern Münih', 'Southampton FC', 'Daniel Peretz'));
+  assert.ok(accepts('FC Bayern Münih', 'Southampton FC', 'Peretz'));
+});
+
+test('Beşiktaş + Leicester (Ndidi, Wikipedia kadrosu)', () => {
+  assert.ok(accepts('Beşiktaş', 'Leicester City FC', 'Ndidi'));
+  assert.ok(accepts('Beşiktaş', 'Leicester City FC', 'Wilfred Ndidi'));
+});
