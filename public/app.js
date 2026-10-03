@@ -22,6 +22,7 @@ const store = storage('localStorage');
 const session = storage('sessionStorage');
 
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const logoImg = (logo, cls) => logo ? `<img class="${cls}" src="${esc(logo)}" alt="" loading="lazy" decoding="async" onerror="this.remove()">` : '';
 const $ = (sel) => app.querySelector(sel);
 
 function toast(msg) {
@@ -213,6 +214,7 @@ function renderPick(same) {
     area.innerHTML = `
       <div class="card picked-box">
         <p class="muted">Seçimin (rakip göremez)</p>
+        ${logoImg(mine.club.logo, 'club-logo')}
         <div class="club">${esc(mine.club.name)}</div>
         <p class="muted small">${esc(mine.club.country)}</p>
       </div>
@@ -231,9 +233,12 @@ function renderPick(same) {
   const input = $('#club-search');
   const update = () => {
     const used = new Set(state.usedClubs || []);
-    $('#club-results').innerHTML = searchClubs(input.value).map((c) => used.has(c.id)
-      ? `<button class="club-opt" disabled><span>${esc(c.name)}</span><small>bu maçta seçildi</small></button>`
-      : `<button class="club-opt" data-id="${c.id}"><span>${esc(c.name)}</span><small>${esc(c.country)}</small></button>`).join('');
+    $('#club-results').innerHTML = searchClubs(input.value).map((c) => {
+      const main = `<span class="opt-main">${logoImg(c.logo, 'logo-sm')}<span class="opt-name">${esc(c.name)}</span></span>`;
+      return used.has(c.id)
+        ? `<button class="club-opt" disabled>${main}<small>bu maçta seçildi</small></button>`
+        : `<button class="club-opt" data-id="${c.id}">${main}<small>${esc(c.country)}</small></button>`;
+    }).join('');
   };
   input.addEventListener('input', update);
   input.addEventListener('keydown', (e) => { if (e.key === 'Enter') $('#club-results .club-opt:not([disabled])')?.click(); });
@@ -241,7 +246,7 @@ function renderPick(same) {
     const btn = e.target.closest('.club-opt');
     if (!btn) return;
     const c = clubs.find((x) => x.id === btn.dataset.id);
-    mine.club = { name: c.name, country: c.country };
+    mine.club = { name: c.name, country: c.country, logo: c.logo };
     send({ t: 'pick', club: c.id });
     renderPick(true);
   });
@@ -294,9 +299,9 @@ function versus() {
   const a = me(), b = rival();
   return `
     <div class="versus">
-      <div class="club-card me"><span class="who">${esc(a.name)}</span><span class="name">${esc(a.club?.name)}</span><span class="muted small">${esc(a.club?.country)}</span></div>
+      <div class="club-card me"><span class="who">${esc(a.name)}</span>${logoImg(a.club?.logo, 'club-logo')}<span class="name">${esc(a.club?.name)}</span><span class="muted small">${esc(a.club?.country)}</span></div>
       <div class="vs">+</div>
-      <div class="club-card rival"><span class="who">${esc(b.name)}</span><span class="name">${esc(b.club?.name)}</span><span class="muted small">${esc(b.club?.country)}</span></div>
+      <div class="club-card rival"><span class="who">${esc(b.name)}</span>${logoImg(b.club?.logo, 'club-logo')}<span class="name">${esc(b.club?.name)}</span><span class="muted small">${esc(b.club?.country)}</span></div>
     </div>`;
 }
 
@@ -496,8 +501,8 @@ function tick() {
 async function loadClubs() {
   const res = await fetch('/api/clubs', { cache: 'no-cache' });
   const raw = await res.json();
-  clubs = raw.map(([id, name, country, aliases]) => ({
-    id, name, country,
+  clubs = raw.map(([id, name, country, aliases, logo]) => ({
+    id, name, country, logo: logo || null,
     keys: [...new Set([name, ...aliases].map(normalize))],
   }));
 }

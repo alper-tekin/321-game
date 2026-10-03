@@ -43,6 +43,9 @@ Club and player data is built from three open sources and saved to `data/footbal
 3. **Wikipedia current squads** (CC BY-SA): squad templates from English Wikipedia club pages,
    which pick up new transfers quickly.
 
+Club logos are also fetched at build time as small (144 px) thumbnail URLs from the clubs' English
+Wikipedia page images; clubs without an image simply have no logo in the game.
+
 To rebuild the data (takes a few minutes; intermediate results are cached in `scripts/.cache`):
 
 ```bash

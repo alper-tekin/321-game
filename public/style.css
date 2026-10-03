@@ -463,6 +463,13 @@ button.link:hover { color: var(--text); filter: none; }
 .club-opt:disabled { cursor: default; }
 .club-opt:disabled:hover { border-color: var(--line); }
 .club-opt:disabled span { text-decoration: line-through; text-decoration-color: var(--muted); }
+.opt-main { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.opt-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* ---------- Kulüp logoları ---------- */
+.logo-sm { width: 26px; height: 26px; object-fit: contain; flex: none; }
+.club-logo { height: 46px; max-width: 92px; object-fit: contain; align-self: center; margin: 2px 0; }
+.picked-box .club-logo { height: 56px; max-width: 110px; }
 .picked-box { text-align: center; padding: 24px 16px; }
 .picked-box .club { font-family: var(--font-display); font-size: 28px; font-weight: 900; color: var(--me); margin: 6px 0 2px; text-shadow: 0 0 30px color-mix(in srgb, var(--me) 40%, transparent); letter-spacing: -.02em; }
 .status-line { display: flex; align-items: center; justify-content: center; gap: 8px; color: var(--muted); font-size: 14px; }

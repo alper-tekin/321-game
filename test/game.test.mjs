@@ -17,7 +17,7 @@ function conn() {
 // game.js'in kullandığı arayüzün en küçük sahte veri kümesi
 const data = {
   clubs: [
-    { id: 'gala', name: 'Galatasaray', country: 'Türkiye' },
+    { id: 'gala', name: 'Galatasaray', country: 'Türkiye', logo: 'https://upload.wikimedia.org/gala.png' },
     { id: 'fb', name: 'Fenerbahçe', country: 'Türkiye' },
   ],
   players: [],
@@ -51,6 +51,8 @@ test('iki oyuncu aynı takımı seçerse tur iptal olur', () => {
   assert.ok(state.players.every((p) => p.score === 0), 'kimse puan almamalı');
   // Seçimler açılmış olmalı ki oyuncular neden iptal edildiğini görsün
   assert.ok(state.players.every((p) => p.club?.name === 'Galatasaray'));
+  // Logo URL'si seçim bilgisiyle istemciye iletilmeli
+  assert.ok(state.players.every((p) => p.club?.logo === 'https://upload.wikimedia.org/gala.png'));
 });
 
 test('farklı takımlar seçilirse tur normal akışta devam eder', () => {
@@ -60,6 +62,9 @@ test('farklı takımlar seçilirse tur normal akışta devam eder', () => {
   const state = lastState(a);
   assert.equal(state.phase, 'countdown');
   assert.notEqual(state.result?.reason, 'sameClub');
+  // Logosu olmayan kulüpte logo null olarak iletilmeli (rakibin kendi görünümünden bakılır;
+  // geri sayımda rakibin seçimi karşı taraftan görünmez)
+  assert.equal(lastState(b).players.find((p) => p.id === b.player.id).club.logo, null);
   game.rooms.get(code).clearTimer(); // askıda kalan geri sayım zamanlayıcısını kapat
 });
 

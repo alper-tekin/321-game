@@ -319,7 +319,7 @@ class Room {
           online: !!p.conn,
           ready: p.ready,
           picked: pick !== undefined,
-          club: showPick && pick !== undefined ? { i: pick, name: data.clubs[pick].name, country: data.clubs[pick].country } : null,
+          club: showPick && pick !== undefined ? { i: pick, name: data.clubs[pick].name, country: data.clubs[pick].country, logo: data.clubs[pick].logo ?? null } : null,
         };
       }),
       guesses: this.guesses.map((g) => ({

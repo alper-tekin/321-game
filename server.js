@@ -16,7 +16,7 @@ const data = loadData(path.join(ROOT, 'data', 'football.json'));
 console.log(`Veri yüklendi: ${data.clubs.length} kulüp, ${data.players.length} oyuncu (${data.builtAt})`);
 
 // Takım seçimi için istemciye gönderilen liste. Seçim Wikidata kimliğiyle yapılır, veri yenilense de kaymaz.
-const clubsJson = JSON.stringify(data.clubs.map((c) => [c.id, c.name, c.country, c.aliases]));
+const clubsJson = JSON.stringify(data.clubs.map((c) => [c.id, c.name, c.country, c.aliases, c.logo ?? null]));
 
 // Tahmin kutusundaki isim önerileri için oyuncu isimleri (popülerlik sırasıyla).
 // Liste TÜM oyuncu havuzudur; hangi isimlerin geçerli cevap olduğunu ele vermez.

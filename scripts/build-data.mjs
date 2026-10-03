@@ -446,16 +446,7 @@ async function applyWikiSquads(clubs, playerClubs, playerByName) {
   console.log('Wikipedia güncel kadroları çekiliyor...');
   try {
     // Kulüp Wikidata kimliği -> İngilizce Wikipedia makale başlığı (önbellekli)
-    const titleRows = await cachedById('club-wiki-titles', clubs.map((c) => c.id), 50, async (batch) => {
-      const j = await wikidataApi({ action: 'wbgetentities', ids: batch.join('|'), props: 'sitelinks', format: 'json' });
-      const rows = [];
-      for (const [qid, ent] of Object.entries(j.entities ?? {})) {
-        const t = ent?.sitelinks?.enwiki?.title;
-        if (t) rows.push([qid, t]);
-      }
-      return rows;
-    });
-    const clubTitle = new Map(titleRows);
+    const clubTitle = await clubWikiTitles(clubs);
 
     // Kulüp makalelerini çek, satır içi kadroları ve geçilen şablonları bul
     const articleTitles = clubs.map((c) => clubTitle.get(c.id)).filter(Boolean);
@@ -531,6 +522,52 @@ async function applyWikiSquads(clubs, playerClubs, playerByName) {
   }
 }
 
+// Kulüp Wikidata kimliği -> İngilizce Wikipedia makale başlığı (önbellekli, kadro taramasıyla ortak)
+async function clubWikiTitles(clubs) {
+  const rows = await cachedById('club-wiki-titles', clubs.map((c) => c.id), 50, async (batch) => {
+    const j = await wikidataApi({ action: 'wbgetentities', ids: batch.join('|'), props: 'sitelinks', format: 'json' });
+    const out = [];
+    for (const [qid, ent] of Object.entries(j.entities ?? {})) {
+      const t = ent?.sitelinks?.enwiki?.title;
+      if (t) out.push([qid, t]);
+    }
+    return out;
+  });
+  return new Map(rows);
+}
+
+// ---------- Kulüp logoları ----------
+// Kulübün İngilizce Wikipedia makalesinin sayfa görseli (neredeyse her zaman kulüp arması)
+// 144 px küçük resim URL'si olarak saklanır. Görseli olmayan kulüpte logo null kalır, oyun onsuz devam eder.
+async function fetchClubLogos(clubs) {
+  console.log('Kulüp logoları çekiliyor...');
+  try {
+    const titleByQid = await clubWikiTitles(clubs);
+    const logoRows = await cachedById('club-logos-v2', clubs.map((c) => c.id), 50, async (batch) => {
+      const titles = batch.map((id) => titleByQid.get(id)).filter(Boolean);
+      if (!titles.length) return [];
+      const j = await wikiApi({
+        action: 'query', prop: 'pageimages', piprop: 'thumbnail', pithumbsize: '144',
+        pilicense: 'any', // varsayılan 'free' çoğu kulüp armasını (fair use) eler
+        format: 'json', formatversion: '2', titles: titles.join('|'),
+      });
+      const urlByTitle = new Map();
+      for (const page of j.query?.pages ?? []) {
+        if (page.thumbnail?.source) urlByTitle.set(page.title, page.thumbnail.source);
+      }
+      return batch
+        .filter((id) => titleByQid.has(id) && urlByTitle.has(titleByQid.get(id)))
+        .map((id) => [id, urlByTitle.get(titleByQid.get(id))]);
+    });
+    const logos = new Map(logoRows);
+    console.log(`  ${logos.size}/${clubs.length} kulüp için logo bulundu`);
+    return logos;
+  } catch (err) {
+    console.warn('  Logo taraması atlandı:', err.message);
+    return new Map();
+  }
+}
+
 // Wikidata'nın henüz işlemediği transferler için elle düzeltmeler (data/overrides.json).
 // Format: { "add": { "<oyuncu QID>": ["<kulüp QID>", ...] }, "remove": { ... } }
 async function applyOverrides(clubs, playerClubs) {
@@ -576,6 +613,7 @@ async function main() {
   });
   console.log(`  ${allClubs.length - clubs.length} kulüp elendi (milli/B/gençlik/kadın), ${clubs.length} kaldı`);
   const pairs = await fetchMemberships(clubs);
+  const clubLogos = await fetchClubLogos(clubs);
 
   // Sadece seçili kulüplerden en az ikisinde oynamış oyuncular oyunda cevap olabilir
   const playerClubs = new Map();
@@ -616,6 +654,7 @@ async function main() {
         aliases: aliasList(entry, name),
         country: pickName(countryLabels.get(c.country)) || '',
         pop: c.pop,
+        logo: clubLogos.get(c.id) ?? null,
       };
     })
     .filter(Boolean)
