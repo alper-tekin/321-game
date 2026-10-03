@@ -224,7 +224,7 @@ function renderPick(same) {
   area.innerHTML = `
     <div>
       <p class="phase-title">Takımını seç</p>
-      <p class="muted small">Rakibin hangi takımı seçtiğini geri sayımdan sonra göreceksin. Bu maçta seçtiğin takımı bir daha seçemezsin.</p>
+      <p class="muted small">Rakibin hangi takımı seçtiğini geri sayımdan sonra göreceksin. Bu maçta seçilen takımları kimse bir daha seçemez.</p>
     </div>
     <input id="club-search" placeholder="Takım ara: Galatasaray, Inter…" autocomplete="off" autocapitalize="off" spellcheck="false">
     <div class="results" id="club-results"></div>`;
@@ -232,7 +232,7 @@ function renderPick(same) {
   const update = () => {
     const used = new Set(state.usedClubs || []);
     $('#club-results').innerHTML = searchClubs(input.value).map((c) => used.has(c.id)
-      ? `<button class="club-opt" disabled><span>${esc(c.name)}</span><small>bu maçta seçtin</small></button>`
+      ? `<button class="club-opt" disabled><span>${esc(c.name)}</span><small>bu maçta seçildi</small></button>`
       : `<button class="club-opt" data-id="${c.id}"><span>${esc(c.name)}</span><small>${esc(c.country)}</small></button>`).join('');
   };
   input.addEventListener('input', update);

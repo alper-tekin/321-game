@@ -63,22 +63,21 @@ test('farklı takımlar seçilirse tur normal akışta devam eder', () => {
   game.rooms.get(code).clearTimer(); // askıda kalan geri sayım zamanlayıcısını kapat
 });
 
-test('bir takım maç içinde oyuncu başına en fazla bir kere seçilebilir', () => {
+test('bir takım maç içinde toplam en fazla bir kere seçilebilir', () => {
   const { game, a, b, code } = twoPlayerRoom();
   game.handle(a, { t: 'pick', club: 'gala' });
   game.handle(b, { t: 'pick', club: 'fb' });
   const room = game.rooms.get(code);
   room.clearTimer(); // 3 sn geri sayımı durdur
-  assert.deepEqual(lastState(a).usedClubs, ['gala']);
+  assert.deepEqual(lastState(a).usedClubs, ['gala', 'fb']);
   room.endRound(null, 'timeout'); // turu bitir
   game.handle(a, { t: 'next' });
   game.handle(b, { t: 'next' });
-  // aynı takımı tekrar seçemez
+  // seçilen takımı ne seçen oyuncu ne rakip tekrar seçebilir
   game.handle(a, { t: 'pick', club: 'gala' });
-  assert.equal(a.sent.filter((m) => m.t === 'error').pop().msg, 'Bu takımı bu maçta zaten seçtin.');
-  // rakip hâlâ seçebilir (kilit oyuncu başına)
-  game.handle(b, { t: 'pick', club: 'gala' });
-  assert.equal(b.sent.filter((m) => m.t === 'error').pop(), undefined);
+  assert.equal(a.sent.filter((m) => m.t === 'error').pop().msg, 'Bu takım bu maçta zaten seçildi.');
+  game.handle(b, { t: 'pick', club: 'fb' });
+  assert.equal(b.sent.filter((m) => m.t === 'error').pop().msg, 'Bu takım bu maçta zaten seçildi.');
   room.clearTimer();
 });
 
