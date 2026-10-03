@@ -1,38 +1,78 @@
-# 3-2-1 Futbol
+# 3-2-1 Football
 
-İki kişilik, ayrı cihazlardan oynanan futbol bilgi oyunu. Geri sayımdan sonra iki oyuncu birer takım açıklar;
-**iki takımda da oynamış** bir futbolcuyu ilk yazan puanı alır.
+A fast two-player football trivia game played from separate devices. After a 3-2-1 countdown, each player
+reveals a club. The first player to name a footballer who has played for **both clubs** wins the point.
 
-## Çalıştırma
+**Live:** https://three21-futbol-j61h.onrender.com
+
+## How to play
+
+1. One player creates a room and shares the 4-digit code (or the invite link).
+2. The other player joins with the code.
+3. Each round, both players secretly pick a club. Picks are revealed at the same time after the countdown.
+4. Type a player who has played for both clubs. Small typos and surname-only answers are accepted
+   (`snejder` → Wesley Sneijder).
+5. If a correct answer is rejected because the data is missing a transfer, the opponent can press
+   **Doğru say** ("count it") to award the point anyway.
+6. First to the target score (3, 5, 7 or 10) wins the match.
+
+If a player doesn't pick within 20 seconds, a random popular club is chosen for them. If the two clubs have
+no player in common, the round is void.
+
+## Running locally
+
+Requires Node.js 20 or later.
 
 ```bash
 npm install
 npm start
 ```
 
-Oyun `http://localhost:3210` adresinde açılır. Aynı Wi-Fi'daki telefondan bilgisayarın yerel IP adresiyle girilebilir.
+The game runs at `http://localhost:3210`. Devices on the same Wi-Fi network can join using your computer's
+local IP address (e.g. `http://192.168.0.13:3210`).
 
-## Veri
+## Data
 
-Veri üç açık kaynaktan birleşir (`npm run build-data`, birkaç dakika sürer):
+Club and player data is built from three open sources and saved to `data/football.json`:
 
-1. **[Wikidata](https://www.wikidata.org)** (CC0) — kulüpler, oyuncular, tarihi kulüp kayıtları,
-   Türkçe/İngilizce isim ve takma adlar
-2. **[Transfermarkt transfer geçmişi](https://github.com/dcaribou/transfermarkt-datasets)** (CC0) —
-   Wikidata'nın kaçırdığı tarihi transferler (veri seti 6 Temmuz 2026'ya kadar)
-3. **Wikipedia güncel kadroları** (CC BY-SA) — kulüplerin İngilizce Wikipedia kadro şablonları;
-   yeni transferler burada hızla güncellenir
+1. **[Wikidata](https://www.wikidata.org)** (CC0): clubs, players, club history, and names and
+   aliases in Turkish and English.
+2. **[Transfermarkt transfer history](https://github.com/dcaribou/transfermarkt-datasets)** (CC0):
+   historical transfers that Wikidata is missing (dataset up to July 6, 2026).
+3. **Wikipedia current squads** (CC BY-SA): squad templates from English Wikipedia club pages,
+   which pick up new transfers quickly.
 
-Wikidata bazen güncel transferleri geç işler. `data/overrides.json` dosyasıyla eksik kulüp kayıtları
-elle eklenebilir (örn. Trossard'ın Beşiktaş transferi). Düzenledikten sonra `npm run build-data`
-çalıştırın. Wikidata kaydı düzeldiğinde override'ı kaldırmak yeterli.
+To rebuild the data (takes a few minutes; intermediate results are cached in `scripts/.cache`):
 
-## Test
+```bash
+npm run build-data
+```
+
+### Manual corrections
+
+Wikidata is sometimes slow to record recent transfers. Missing club memberships can be added by hand in
+`data/overrides.json` (keys are player Wikidata IDs, values are lists of club Wikidata IDs), then applied
+with `npm run build-data`. Remove an override once Wikidata has caught up.
+
+## Project structure
+
+| Path | Description |
+|---|---|
+| `server.js` | HTTP server, static files, `/api/clubs`, `/api/players` and the WebSocket endpoint |
+| `game.js` | Rooms, rounds, timers and scoring (the server is the source of truth) |
+| `data.js` | Loads the dataset, finds common players and checks answers |
+| `public/` | Mobile-first browser client |
+| `scripts/build-data.mjs` | Data build script |
+| `test/` | Answer-matching tests against the real dataset |
+
+## Tests
 
 ```bash
 npm test
 ```
 
-## Yayınlama
+## Deployment
 
-`render.yaml` ile [Render](https://render.com) ücretsiz planına yüklenebilir.
+The repository includes a `render.yaml` blueprint for [Render](https://render.com)'s free plan. Every push to
+`main` is deployed automatically. Free instances sleep after 15 minutes of inactivity, so the first request
+after a break can take about 50 seconds.
