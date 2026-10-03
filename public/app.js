@@ -9,6 +9,8 @@ let state = null;       // sunucudan gelen oda durumu
 let clockOffset = 0;    // sunucu saati - yerel saat
 let screenKey = null;   // ekran değişmediyse input'ları silmemek için
 let clubs = [];         // [{i, name, country, keys}]
+let playerNames = [];   // isim önerileri: popülerlik sırasıyla tüm oyuncu isimleri
+let playerKeys = null;  // playerNames'in normalize edilmiş hâli (ilk kullanımda hesaplanır)
 const seenGuesses = new Set(); // sadece yeni tahminler animasyonla gelsin
 
 // İsim kalıcı (localStorage); oda bilgisi sekmeye özel (sessionStorage), böylece aynı tarayıcıda iki sekme iki ayrı oyuncu olabilir
@@ -263,6 +265,26 @@ function searchClubs(q) {
   return scored.sort((a, b) => b[0] - a[0]).slice(0, 8).map((x) => x[1]); // aynı puanda popülerlik sırası korunur
 }
 
+// İsim önerisi araması: tüm oyuncu havuzunda (popülerlik sırası korunur).
+// 3 = baştan eşleşme, 2 = kelime başlangıcı ("guler" -> "Arda Güler"), 1 = içerme.
+function searchPlayers(q) {
+  if (!playerNames.length) return [];
+  if (!playerKeys) playerKeys = playerNames.map(normalize); // ilk kullanımda bir kere
+  const n = normalize(q);
+  if (n.length < 2) return [];
+  const hits = [];
+  for (let i = 0; i < playerKeys.length; i++) {
+    const k = playerKeys[i];
+    let s = 0;
+    if (k.startsWith(n)) s = 3;
+    else if (k.includes(' ' + n)) s = 2;
+    else if (n.length >= 4 && k.includes(n)) s = 1;
+    if (s) hits.push([s, i]);
+  }
+  hits.sort((a, b) => b[0] - a[0] || a[1] - b[1]); // aynı puanda popülerlik sırası
+  return hits.slice(0, 8).map((x) => playerNames[x[1]]);
+}
+
 function renderCountdown(same) {
   if (!same) app.innerHTML = `${scoreboard()}<div class="countdown"><div class="count-num" id="count"></div></div>`;
 }
@@ -283,16 +305,69 @@ function renderGuess(same, prev) {
       ${scoreboard()}
       ${versus()}
       ${timerBar()}
-      <form class="guess-form" id="guess-form" autocomplete="off">
-        <input id="guess" placeholder="İki takımda da oynamış oyuncu…" autocomplete="off" autocapitalize="words" spellcheck="false" enterkeyhint="send">
-        <button class="primary">Gönder</button>
-      </form>
+      <div class="guess-area">
+        <form class="guess-form" id="guess-form" autocomplete="off">
+          <input id="guess" placeholder="İki takımda da oynamış oyuncu…" autocomplete="off" autocapitalize="words" spellcheck="false" enterkeyhint="send">
+          <button class="primary">Gönder</button>
+        </form>
+        <div class="suggest" id="suggest" hidden></div>
+      </div>
       <div class="feed" id="feed"></div>`;
+
+    // İsim önerileri (otomatik tamamlama). Liste tüm oyuncu havuzundan aranır,
+    // geçerli cevapları ele vermez.
+    const input = $('#guess');
+    const sug = $('#suggest');
+    let sugList = [], sugIdx = -1, sugTimer = null;
+
+    const hideSuggest = () => {
+      clearTimeout(sugTimer);
+      sug.hidden = true;
+      sugIdx = -1;
+      sugList = [];
+      sug.innerHTML = '';
+    };
+    const markSuggest = () => {
+      [...sug.children].forEach((el, i) => el.classList.toggle('active', i === sugIdx));
+      sug.children[sugIdx]?.scrollIntoView({ block: 'nearest' });
+    };
+    const updateSuggest = () => {
+      clearTimeout(sugTimer);
+      sugTimer = setTimeout(() => {
+        sugList = searchPlayers(input.value);
+        sugIdx = -1;
+        if (!sugList.length) { sug.hidden = true; return; }
+        sug.innerHTML = sugList.map((nm, i) => `<button type="button" data-i="${i}">${esc(nm)}</button>`).join('');
+        sug.hidden = false;
+      }, 70);
+    };
+    const pickSuggestion = (name) => {
+      input.value = name;
+      hideSuggest();
+      $('#guess-form').requestSubmit();
+    };
+
+    input.addEventListener('input', updateSuggest);
+    input.addEventListener('keydown', (e) => {
+      if (sug.hidden || !sugList.length) return;
+      if (e.key === 'ArrowDown') { e.preventDefault(); sugIdx = (sugIdx + 1) % sugList.length; markSuggest(); }
+      else if (e.key === 'ArrowUp') { e.preventDefault(); sugIdx = (sugIdx - 1 + sugList.length) % sugList.length; markSuggest(); }
+      else if (e.key === 'Enter' && sugIdx >= 0) { e.preventDefault(); pickSuggestion(sugList[sugIdx]); }
+      else if (e.key === 'Escape') hideSuggest();
+    });
+    // Öneriye tıklarken input odağı kaymasın (mobilde klavye kaplanmasın)
+    sug.addEventListener('mousedown', (e) => e.preventDefault());
+    sug.addEventListener('click', (e) => {
+      const btn = e.target.closest('button[data-i]');
+      if (btn) pickSuggestion(sugList[Number(btn.dataset.i)]);
+    });
+    input.addEventListener('blur', () => setTimeout(hideSuggest, 150));
+
     $('#guess-form').addEventListener('submit', (e) => {
       e.preventDefault();
-      const input = $('#guess');
       const text = input.value.trim();
       if (!text) return;
+      hideSuggest();
       send({ t: 'guess', text });
       input.value = '';
       input.focus();
@@ -301,7 +376,7 @@ function renderGuess(same, prev) {
       const btn = e.target.closest('[data-accept]');
       if (btn) send({ t: 'accept', guessId: Number(btn.dataset.accept) });
     });
-    $('#guess').focus();
+    input.focus();
     navigator.vibrate?.(80);
   }
 
@@ -423,7 +498,13 @@ async function loadClubs() {
   }));
 }
 
+async function loadPlayers() {
+  const res = await fetch('/api/players', { cache: 'no-cache' });
+  playerNames = await res.json();
+}
+
 render();
 loadClubs().catch(() => toast('Takım listesi yüklenemedi.'));
+loadPlayers().catch(() => {}); // öneri listesi yüklenmezse sessizce devam et
 connect();
 requestAnimationFrame(tick);

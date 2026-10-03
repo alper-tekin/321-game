@@ -1,6 +1,8 @@
 import http from 'node:http';
 import fs from 'node:fs';
 import path from 'node:path';
+import zlib from 'node:zlib';
+import crypto from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { WebSocketServer } from 'ws';
 import { loadData } from './data.js';
@@ -16,6 +18,12 @@ console.log(`Veri yüklendi: ${data.clubs.length} kulüp, ${data.players.length}
 // Takım seçimi için istemciye gönderilen liste. Seçim Wikidata kimliğiyle yapılır, veri yenilense de kaymaz.
 const clubsJson = JSON.stringify(data.clubs.map((c) => [c.id, c.name, c.country, c.aliases]));
 
+// Tahmin kutusundaki isim önerileri için oyuncu isimleri (popülerlik sırasıyla).
+// Liste TÜM oyuncu havuzudur; hangi isimlerin geçerli cevap olduğunu ele vermez.
+const playersJson = JSON.stringify([...new Set(data.players.map((p) => p.name))]);
+const playersEtag = `"${crypto.createHash('sha1').update(playersJson).digest('hex').slice(0, 16)}"`;
+const playersGz = zlib.gzipSync(playersJson);
+
 const game = new GameServer(data);
 
 const TYPES = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.svg': 'image/svg+xml', '.json': 'application/json' };
@@ -25,6 +33,20 @@ const server = http.createServer((req, res) => {
   if (url.pathname === '/api/clubs') {
     res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-cache' });
     return res.end(clubsJson);
+  }
+  if (url.pathname === '/api/players') {
+    // ETag ile yeniden doğrulama (304) ve gzip ile ~4 kat küçük aktarım
+    if (req.headers['if-none-match'] === playersEtag) {
+      res.writeHead(304, { ETag: playersEtag });
+      return res.end();
+    }
+    const headers = { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-cache', ETag: playersEtag, Vary: 'Accept-Encoding' };
+    if (String(req.headers['accept-encoding'] || '').includes('gzip')) {
+      res.writeHead(200, { ...headers, 'Content-Encoding': 'gzip' });
+      return res.end(playersGz);
+    }
+    res.writeHead(200, headers);
+    return res.end(playersJson);
   }
   if (url.pathname === '/healthz') {
     res.writeHead(200);
