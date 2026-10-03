@@ -128,3 +128,16 @@ test('ülke modu: ülkeler oyuncu sayısına göre sıralı ve takma adlı', () 
   const sscb = data.countries.find((c) => c.aliases?.includes('SSCB'));
   assert.ok(sscb, 'SSCB takma adı olmalı');
 });
+
+// Spor ulusalitesi (P1532) regresyonu: Kaká'nın İtalyan, Messi'nin İtalyan/İspanyol
+// pasaportu var (P27'de görünüyor) ama oyun açısından Brezilyalı / Arjantinli sayılırlar.
+test('ülke modu: spor ulusalitesi yasal vatandaşlığa tercih edilir (Kaká, Messi, Di María)', () => {
+  assert.ok(acceptsCountry('Real Madrid CF', 'Q155', 'Kaká'), 'Kaká Brezilyalı olmalı');
+  assert.ok(!acceptsCountry('A.C. Milan', 'Q38', 'Kaká'), 'Kaká İtalyan sayılmamalı');
+  assert.ok(!acceptsCountry('Real Madrid CF', 'Q29', 'Kaká'), 'Kaká İspanyol sayılmamalı');
+  assert.ok(acceptsCountry('Paris Saint-Germain', 'Q414', 'Di María'), 'Di María Arjantinli olmalı');
+  assert.ok(!acceptsCountry('Paris Saint-Germain', 'Q38', 'Di María'), 'Di María İtalyan sayılmamalı');
+  assert.ok(acceptsCountry('FC Barcelona', 'Q414', 'Messi'), 'Messi Arjantinli olmalı');
+  assert.ok(!acceptsCountry('FC Barcelona', 'Q38', 'Messi'), 'Messi İtalyan sayılmamalı');
+  assert.ok(!acceptsCountry('FC Barcelona', 'Q29', 'Messi'), 'Messi İspanyol sayılmamalı');
+});

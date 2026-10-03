@@ -607,6 +607,34 @@ const COUNTRY_ALIASES = {
   Q878: ['BAE', 'UAE'],
 };
 
+// Oyuncunun SPOR ulusalitesi (P1532): futbolcu olarak hangi ülkeyi temsil ettiği.
+// P27'den (yasal vatandaşlık) önce gelir: Kaká, Messi, Di María gibi Güney Amerikalı
+// oyuncuların İtalyan/İspanyol pasaportları oyunu yanıltır; oyuncular için "İtalyan"
+// denince anlaşılan şey milli takım ülkesidir. P1532'si olmayanlar (milli olmayanlar)
+// P27'ye düşer.
+async function fetchPlayerSportCountries(playerIds) {
+  console.log('Oyuncu spor ulusaliteleri çekiliyor (P1532)...');
+  const qids = playerIds.filter((id) => /^Q\d+$/.test(id));
+  const rows = await cachedById('player-sport-countries-v1', qids, 400, async (batch) => {
+    const r = await sparql(`
+      SELECT ?p ?country WHERE {
+        VALUES ?p { ${batch.map((id) => `wd:${id}`).join(' ')} }
+        ?p wdt:P1532 ?country.
+      }`);
+    await sleep(300);
+    return r.map((x) => [qid(x.p.value), qid(x.country.value)]);
+  });
+  const map = new Map(); // oyuncu kimliği -> Set(ülke kimliği)
+  for (const [p, c] of rows) {
+    if (!map.has(p)) map.set(p, new Set());
+    map.get(p).add(c);
+  }
+  // Tarihsel devletleri modern haleflerine indir (İngiltere/İskoçya -> Birleşik Krallık dahil)
+  for (const [p, set] of map) map.set(p, new Set([...set].map((c) => COUNTRY_FIX[c] ?? c)));
+  console.log(`  ${map.size}/${qids.length} oyuncunun spor ulusalitesi bulundu`);
+  return map;
+}
+
 async function fetchPlayerCountries(playerIds) {
   console.log('Oyuncu uyrukları çekiliyor...');
   const qids = playerIds.filter((id) => /^Q\d+$/.test(id));
@@ -703,11 +731,18 @@ async function main() {
   // Sadece Wikidata kimlikli oyuncular için etiket çekilir (tm- önekli olanların ismi Transfermarkt'tan gelir)
   const playerLabels = await fetchLabels(playerIds.filter((id) => /^Q\d+$/.test(id)), 'oyuncu');
   const playerCountries = await fetchPlayerCountries(playerIds);
+  const playerSportCountries = await fetchPlayerSportCountries(playerIds);
+  // Spor ulusalitesi (P1532) varsa o geçerli, yoksa yasal vatandaşlığa (P27) düşülür
+  const effectiveCountries = new Map();
+  for (const id of playerIds) {
+    const set = playerSportCountries.get(id) ?? playerCountries.get(id);
+    if (set && set.size) effectiveCountries.set(id, set);
+  }
 
-  // Ülke listesi: oyuncuların uyruklarından, oyuncu sayısına (popülerliğe) göre sıralı.
+  // Ülke listesi: oyuncuların (etkili) ulusalitelerinden, oyuncu sayısına (popülerliğe) göre sıralı.
   // 3'ten az oyuncusu olanlar (şehir/ülke karışması, tek oyunculu ülkeler) seçilebilir listeden çıkarılır.
   const countryCount = new Map();
-  for (const set of playerCountries.values()) for (const c of set) countryCount.set(c, (countryCount.get(c) ?? 0) + 1);
+  for (const set of effectiveCountries.values()) for (const c of set) countryCount.set(c, (countryCount.get(c) ?? 0) + 1);
   const countryIds = [...new Set([...clubs.map((c) => c.country).filter(Boolean), ...countryCount.keys()])];
   const countryLabels = await fetchLabels(countryIds, 'ulke');
   const outCountries = [...countryCount.entries()]
@@ -745,7 +780,7 @@ async function main() {
       if (!name) return null;
       const cl = [...playerClubs.get(p)].map((c) => clubIndex.get(c)).filter((i) => i !== undefined);
       if (cl.length < 2) return null;
-      return { id: p, name, aliases: entry ? aliasList(entry, name) : [], pop: playerPop.get(p) ?? 0, clubs: cl, countries: [...(playerCountries.get(p) ?? [])] };
+      return { id: p, name, aliases: entry ? aliasList(entry, name) : [], pop: playerPop.get(p) ?? 0, clubs: cl, countries: [...(effectiveCountries.get(p) ?? [])] };
     })
     .filter(Boolean)
     .sort((a, b) => b.pop - a.pop);
