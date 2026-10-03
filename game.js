@@ -201,6 +201,8 @@ class Room {
 
   startCountdown() {
     const [a, b] = this.players.map((p) => this.picks.get(p.id));
+    // İki oyuncu aynı takımı seçtiyse tur anlamsız olur: iptal edip yeni turdan devam
+    if (a === b) return this.endRound(null, 'sameClub');
     this.answers = this.data.commonPlayers(a, b);
     this.setPhase('countdown', COUNTDOWN_MS, () => {
       if (this.answers.length === 0) this.endRound(null, 'noCommon');

@@ -412,7 +412,10 @@ function renderResult() {
   const winnerName = r.winner ? state.players.find((p) => p.id === r.winner)?.name : null;
 
   let cls = 'none', title, sub = '';
-  if (r.reason === 'noCommon') {
+  if (r.reason === 'sameClub') {
+    title = 'Aynı takım!';
+    sub = 'İkiniz de aynı takımı seçtiniz, tur iptal. Yeni turda farklı takımlar seçin.';
+  } else if (r.reason === 'noCommon') {
     title = 'Ortak oyuncu yok';
     sub = 'Verilere göre bu iki takımda birden oynamış futbolcu bulunamadı. Tur geçersiz.';
   } else if (r.reason === 'timeout') {
