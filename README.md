@@ -65,6 +65,11 @@ with `npm run build-data`. Remove an override once Wikidata has caught up.
 | `scripts/build-data.mjs` | Data build script |
 | `test/` | Answer-matching tests against the real dataset |
 
+## Themes
+
+Four selectable themes are available via the 🎨 button in the top-right corner: **Night Match**
+(default), **Retro Poster**, **Light** and **Neon**. The choice is stored in the browser.
+
 ## Tests
 
 ```bash

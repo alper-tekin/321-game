@@ -128,7 +128,7 @@ function renderHome() {
     <div class="card stack">
       <div>
         <label for="name">Adın</label>
-        <input id="name" maxlength="16" autocomplete="nickname" placeholder="Örn. Alper" value="${esc(store.get('name') || '')}">
+        <input id="name" maxlength="16" autocomplete="nickname" placeholder="Adın" value="${esc(store.get('name') || '')}">
       </div>
       ${invited ? '' : '<button class="primary full" id="create">Oda kur</button><div class="divider">ya da odaya katıl</div>'}
       <div class="row">

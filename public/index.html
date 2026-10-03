@@ -3,15 +3,30 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-  <meta name="theme-color" content="#0b1220">
+  <meta name="theme-color" content="#060b16">
+  <meta name="description" content="3-2-1 Futbol — iki kişilik hızlı futbol bilgi yarışı. İki takımda da oynamış futbolcuyu ilk yazan kazanır!">
   <title>3-2-1 Futbol</title>
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>⚽</text></svg>">
+  <script>try { document.documentElement.dataset.theme = localStorage.getItem('theme') || 'night'; } catch {}</script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Archivo+Black&family=Archivo:wght@400;500;600;700;800&family=Inter:wght@400;500;600;700;800&family=Outfit:wght@400;500;600;700;800;900&family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/style.css">
 </head>
 <body>
   <main id="app"></main>
+  <button id="theme-btn" aria-haspopup="true" aria-expanded="false" aria-controls="theme-pop" title="Tema seç">
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="13.5" cy="6.5" r=".5"/><circle cx="17.5" cy="10.5" r=".5"/><circle cx="8.5" cy="7.5" r=".5"/><circle cx="6.5" cy="12.5" r=".5"/><path d="M12 2C6.5 2 2 6.5 2 12s4.5 10 10 10c.926 0 1.648-.746 1.648-1.688 0-.437-.18-.835-.437-1.125-.29-.289-.438-.652-.438-1.125a1.64 1.64 0 0 1 1.668-1.668h1.996c3.051 0 5.555-2.503 5.555-5.554C21.965 6.012 17.461 2 12 2z"/></svg>
+  </button>
+  <div id="theme-pop" hidden>
+    <button data-set="night"><span class="sw sw-night"></span>Gece Maçı</button>
+    <button data-set="retro"><span class="sw sw-retro"></span>Retro Poster</button>
+    <button data-set="light"><span class="sw sw-light"></span>Aydınlık</button>
+    <button data-set="neon"><span class="sw sw-neon"></span>Neon</button>
+  </div>
   <div id="toast" role="status" aria-live="polite"></div>
   <div id="conn" hidden>Bağlantı koptu, yeniden bağlanılıyor…</div>
+  <script type="module" src="/theme.js"></script>
   <script type="module" src="/app.js"></script>
 </body>
 </html>
