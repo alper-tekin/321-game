@@ -397,7 +397,7 @@ function renderGuess(same, prev) {
       ${timerBar()}
       <div class="guess-area">
         <form class="guess-form" id="guess-form" autocomplete="off">
-          <input id="guess" placeholder="${state.mode === 'country' ? 'Bu takımda oynamış, bu ülkeden bir oyuncu…' : 'İki takımda da oynamış oyuncu…'}" autocomplete="off" autocapitalize="words" spellcheck="false" enterkeyhint="send">
+          <input id="guess" placeholder="${state.mode === 'country' ? 'Bu takımda oynamış, bu ülkenin milli oyuncusu…' : 'İki takımda da oynamış oyuncu…'}" autocomplete="off" autocapitalize="words" spellcheck="false" enterkeyhint="send">
           <button class="primary">Gönder</button>
         </form>
         <div class="suggest" id="suggest" hidden></div>
@@ -508,7 +508,7 @@ function renderResult() {
   } else if (r.reason === 'noCommon') {
     title = 'Ortak oyuncu yok';
     sub = state.mode === 'country'
-      ? 'Verilere göre bu takımda oynamış bu ülkeden futbolcu bulunamadı. Tur geçersiz.'
+      ? 'Verilere göre bu takımda oynamış bu ülkenin milli oyuncusu bulunamadı. Tur geçersiz.'
       : 'Verilere göre bu iki takımda birden oynamış futbolcu bulunamadı. Tur geçersiz.';
   } else if (r.reason === 'timeout') {
     title = 'Süre doldu';

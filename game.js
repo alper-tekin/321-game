@@ -304,10 +304,10 @@ class Room {
         const country = this.countryPicks.get(this.opponent(clubPicker).id);
         const noClub = p && !p.clubs.includes(club);
         const noCountry = p && !(p.countries ?? []).includes(country);
-        if (noClub && noCountry) g.note = `${p.name} ${this.data.clubName(club)} forması giymemiş ve ${this.data.countryName(country)} vatandaşı da değil.`;
+        if (noClub && noCountry) g.note = `${p.name} ${this.data.clubName(club)} forması giymemiş ve ${this.data.countryName(country)} milli takımında da oynamamış.`;
         else if (noClub) g.note = `${p.name} verilere göre ${this.data.clubName(club)} formasını giymemiş.`;
-        else if (noCountry) g.note = `${p.name} ${this.data.countryName(country)} vatandaşı değil.`;
-        else if (p && !p.countries?.length) g.note = `${p.name}'in uyruk bilgisi veride yok.`;
+        else if (noCountry) g.note = `${p.name} ${this.data.countryName(country)} milli takımında oynamadı.`;
+        else if (p && !p.countries?.length) g.note = `${p.name} için milli takım bilgisi yok.`;
         else g.note = 'Bu isim bu takım ve ülke kombinasyonuna uyan oyuncular arasında yok.';
       } else {
         const missing = p
