@@ -86,6 +86,24 @@ test('bir takım maç içinde toplam en fazla bir kere seçilebilir', () => {
   room.clearTimer();
 });
 
+test('biten maç son maçlar listesine düşer', () => {
+  const { game, a, b, code } = twoPlayerRoom();
+  const room = game.rooms.get(code);
+  room.clearTimer();
+  room.endRound(room.players[0], 'correct'); // 1-0
+  room.endRound(room.players[0], 'correct'); // 2-0
+  room.endRound(room.players[0], 'correct'); // 3-0 -> maç bitti
+  assert.equal(room.phase, 'over');
+  assert.equal(game.recentMatches.length, 1);
+  const m = game.recentMatches[0];
+  assert.deepEqual(m.players.map((p) => p.name), ['Alper', 'Bora']);
+  assert.deepEqual(m.players.map((p) => p.score), [3, 0]);
+  assert.ok(m.at <= Date.now());
+  // tekrar endRound çağrısı maçı ikinci kez kaydetmez
+  room.endRound(room.players[0], 'correct');
+  assert.equal(game.recentMatches.length, 1);
+});
+
 test('aynı takım iptalinde seçimler yakılmaz', () => {
   const { game, a, b, code } = twoPlayerRoom();
   game.handle(a, { t: 'pick', club: 'gala' });

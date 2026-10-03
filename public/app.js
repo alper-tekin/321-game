@@ -119,6 +119,33 @@ function render(prev) {
   screens[state.phase](same, prev);
 }
 
+function timeAgo(ts) {
+  const s = Math.max(0, Math.floor((Date.now() - ts) / 1000));
+  if (s < 60) return 'şimdi';
+  if (s < 3600) return `${Math.floor(s / 60)} dk önce`;
+  if (s < 86400) return `${Math.floor(s / 3600)} sa önce`;
+  return `${Math.floor(s / 86400)} gün önce`;
+}
+
+async function loadRecentMatches() {
+  try {
+    const res = await fetch('/api/matches', { cache: 'no-cache' });
+    const matches = await res.json();
+    const box = $('#recent');
+    if (!box || !matches.length) return; // liste boşsa ya da ekran değiştiyse gösterme
+    box.hidden = false;
+    $('#recent-list').innerHTML = matches.map((m) => {
+      const [a, b] = m.players;
+      return `
+        <div class="match-row">
+          <span class="mp ${a.score > b.score ? 'win' : ''}">${esc(a.name)}</span>
+          <span class="mid"><span class="ms">${a.score} – ${b.score}</span><time>${timeAgo(m.at)}</time></span>
+          <span class="mp r ${b.score > a.score ? 'win' : ''}">${esc(b.name)}</span>
+        </div>`;
+    }).join('');
+  } catch {} // liste yüklenemezse giriş ekranı olduğu gibi kalır
+}
+
 function renderHome() {
   const params = new URLSearchParams(location.search);
   const invited = params.get('oda') || '';
@@ -136,6 +163,10 @@ function renderHome() {
         <input id="code" class="code" inputmode="numeric" maxlength="4" placeholder="Kod" value="${esc(invited)}">
         <button class="${invited ? 'primary' : ''}" id="join">Katıl</button>
       </div>
+    </div>
+    <div class="card stack" id="recent" hidden>
+      <h3>Son maçlar</h3>
+      <div class="match-list" id="recent-list"></div>
     </div>`;
 
   const name = () => {
@@ -153,6 +184,7 @@ function renderHome() {
     send({ t: 'join', code, name: n });
   });
   $('#code').addEventListener('keydown', (e) => { if (e.key === 'Enter') $('#join').click(); });
+  loadRecentMatches();
 }
 
 function renderLobby() {

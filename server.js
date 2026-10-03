@@ -48,6 +48,11 @@ const server = http.createServer((req, res) => {
     res.writeHead(200, headers);
     return res.end(playersJson);
   }
+  if (url.pathname === '/api/matches') {
+    // Giriş ekranındaki "Son maçlar" listesi (bellekte tutulur, sunucu yeniden başlarsa boşalır)
+    res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-cache' });
+    return res.end(JSON.stringify(game.recentMatches));
+  }
   if (url.pathname === '/healthz') {
     res.writeHead(200);
     return res.end('ok');

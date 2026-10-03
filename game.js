@@ -14,7 +14,13 @@ export class GameServer {
   constructor(data) {
     this.data = data;
     this.rooms = new Map();
+    this.recentMatches = []; // giriş ekranındaki "Son maçlar" listesi (yalnızca biten maçlar)
     setInterval(() => this.cleanup(), 60_000).unref();
+  }
+
+  recordMatch(match) {
+    this.recentMatches.unshift(match);
+    if (this.recentMatches.length > 15) this.recentMatches.length = 15;
   }
 
   handle(conn, msg) {
@@ -48,7 +54,7 @@ export class GameServer {
     let code;
     do code = String(Math.floor(1000 + Math.random() * 9000));
     while (this.rooms.has(code));
-    const room = new Room(code, this.data);
+    const room = new Room(code, this.data, (m) => this.recordMatch(m));
     this.rooms.set(code, room);
     this.attach(conn, room, room.addPlayer(name));
   }
@@ -114,9 +120,10 @@ export class GameServer {
 }
 
 class Room {
-  constructor(code, data) {
+  constructor(code, data, onMatchEnd = null) {
     this.code = code;
     this.data = data;
+    this.onMatchEnd = onMatchEnd;
     this.players = [];
     this.used = new Set(); // bu maçta seçilmiş kulüpler (indeks); iki oyuncu için ortak kilit
     this.phase = 'lobby'; // lobby | pick | countdown | guess | result | over
@@ -267,6 +274,13 @@ class Room {
     this.endReason = reason;
     if (winner) winner.score++;
     const champion = this.players.find((p) => p.score >= this.target);
+    if (champion && this.phase !== 'over') {
+      // Maç bitti: giriş ekranındaki "Son maçlar" listesi için kaydet
+      this.onMatchEnd?.({
+        players: this.players.map((p) => ({ name: p.name, score: p.score })),
+        at: Date.now(),
+      });
+    }
     this.setPhase(champion ? 'over' : 'result', null);
   }
 
