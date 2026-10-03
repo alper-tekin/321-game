@@ -18,7 +18,8 @@ reveals a club. The first player to name a footballer who has played for **both 
 6. First to the target score (3, 5, 7 or 10) wins the match.
 
 If a player doesn't pick within 20 seconds, a random popular club is chosen for them. If the two clubs have
-no player in common, the round is void.
+no player in common, the round is void. If neither player names a common player within 15 seconds, the round
+is passed.
 
 ## Running locally
 

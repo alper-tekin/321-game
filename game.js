@@ -4,7 +4,7 @@ import crypto from 'node:crypto';
 
 const PICK_MS = 20_000;
 const COUNTDOWN_MS = 3_000;
-const GUESS_MS = 60_000;
+const GUESS_MS = 15_000;
 const GUESS_COOLDOWN_MS = 600;
 const ROOM_IDLE_MS = 15 * 60_000;
 const MAX_PLAYERS = 2;

@@ -476,9 +476,9 @@ function tick() {
     const left = state.deadline - serverNow();
     const bar = document.querySelector('#timer');
     if (bar) {
-      const total = state.phase === 'pick' ? 20000 : 60000;
+      const total = state.phase === 'pick' ? 20000 : 15000;
       bar.firstElementChild.style.transform = `scaleX(${Math.max(0, Math.min(1, left / total))})`;
-      bar.classList.toggle('low', left < 10000);
+      bar.classList.toggle('low', left < (state.phase === 'pick' ? 10000 : 5000));
     }
     const count = document.querySelector('#count');
     if (count) {
