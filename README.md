@@ -13,7 +13,8 @@ reveals a club. The first player to name a footballer who has played for **both 
    - **Classic** — both players secretly pick a club each round. Picks are revealed at the same time after
      the countdown; name a player who has played for **both clubs**.
    - **Country** — one player secretly picks a club and the other a country (roles alternate every round).
-     Name a player who has played for that club **and represented that country's national team**.
+     Name a player who has played for that club **and is from that country** (the national team they
+     represented if they have one, otherwise their nationality).
 4. Each club (and, in country mode, each country) can be picked only once per match — once either player
    has picked it, neither can pick it again.
 5. Type a player who matches. Small typos and surname-only answers are accepted
@@ -45,9 +46,9 @@ Club and player data is built from three open sources and saved to `data/footbal
 
 1. **[Wikidata](https://www.wikidata.org)** (CC0): clubs, players, club history, names and
    aliases in Turkish and English, and player countries. A player's country is the
-   national team they represented (P1532) — legal citizenship (P27) is deliberately
-   not used, so Kaká counts as Brazilian despite his Italian passport, and players
-   who never played international football have no country at all.
+   national team they represented (P1532) when available — so Kaká counts as Brazilian
+   despite his Italian passport — and otherwise their legal nationality (P27), so
+   players who never played international football still count.
    Historical states are mapped to their modern successors (e.g. Kingdom of the
    Netherlands → Netherlands); meaningful football nations like the USSR,
    Czechoslovakia and the Ottoman Empire are kept as-is.

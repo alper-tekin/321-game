@@ -608,10 +608,9 @@ const COUNTRY_ALIASES = {
 };
 
 // Oyuncunun SPOR ulusalitesi (P1532): futbolcu olarak hangi ülkeyi temsil ettiği.
-// Yalnızca bu kullanılır: Kaká, Messi, Di María gibi Güney Amerikalı oyuncuların
-// İtalyan/İspanyol pasaportları oyunu yanıltır; "ülke" sorusunun cevabı yalnızca
-// milli takımda temsil edilen ülkedir. P1532'si olmayanlar (milli olmayanlar)
-// hiçbir ülkeye ait sayılmaz ve ülke modunda cevap olamaz.
+// Milli takımı olan oyuncuda bu geçerlidir: Kaká, Messi, Di María gibi Güney
+// Amerikalı oyuncuların İtalyan/İspanyol pasaportları (P27) oyunu yanıltır.
+// Milli takımı olmayanlara P27'deki yasal milliyeti verilir (aşağıya bakın).
 async function fetchPlayerSportCountries(playerIds) {
   console.log('Oyuncu spor ulusaliteleri çekiliyor (P1532)...');
   const qids = playerIds.filter((id) => /^Q\d+$/.test(id));
@@ -635,6 +634,30 @@ async function fetchPlayerSportCountries(playerIds) {
   return map;
 }
 
+// Oyuncunun yasal milliyeti (P27): milli takımı olmayan oyuncular için yedek.
+// Milli takımı olanlarda yok sayılır (Kaká'nın İtalyan pasaportu gibi).
+async function fetchPlayerCountries(playerIds) {
+  console.log('Oyuncu milliyetleri çekiliyor (P27, yedek)...');
+  const qids = playerIds.filter((id) => /^Q\d+$/.test(id));
+  const rows = await cachedById('player-countries-v1', qids, 400, async (batch) => {
+    const r = await sparql(`
+      SELECT ?p ?country WHERE {
+        VALUES ?p { ${batch.map((id) => `wd:${id}`).join(' ')} }
+        ?p wdt:P27 ?country.
+      }`);
+    await sleep(300);
+    return r.map((x) => [qid(x.p.value), qid(x.country.value)]);
+  });
+  const map = new Map(); // oyuncu kimliği -> Set(ülke kimliği)
+  for (const [p, c] of rows) {
+    if (!map.has(p)) map.set(p, new Set());
+    map.get(p).add(c);
+  }
+  // Tarihsel devletleri modern haleflerine indir
+  for (const [p, set] of map) map.set(p, new Set([...set].map((c) => COUNTRY_FIX[c] ?? c)));
+  console.log(`  ${map.size}/${qids.length} oyuncunun milliyeti bulundu`);
+  return map;
+}
 
 // Wikidata'nın henüz işlemediği transferler için elle düzeltmeler (data/overrides.json).
 // Format: { "add": { "<oyuncu QID>": ["<kulüp QID>", ...] }, "remove": { ... } }
@@ -708,11 +731,18 @@ async function main() {
 
   // Sadece Wikidata kimlikli oyuncular için etiket çekilir (tm- önekli olanların ismi Transfermarkt'tan gelir)
   const playerLabels = await fetchLabels(playerIds.filter((id) => /^Q\d+$/.test(id)), 'oyuncu');
-  // Ülke = yalnızca milli takımda temsil edilen ülke (P1532). P27 (yasal vatandaşlık)
-  // hiç kullanılmaz; milli olmayan oyuncuların ülkesi yoktur.
-  const effectiveCountries = await fetchPlayerSportCountries(playerIds);
+  // Ülke = varsa milli takım ülkesi (P1532), yoksa yasal milliyet (P27).
+  // Böylece milli olmayan oyuncular da milliyetleriyle cevap olabilir; ama milli
+  // takımı olanların pasaportları (Kaká'nın İtalyan pasaportu gibi) yok sayılır.
+  const playerSportCountries = await fetchPlayerSportCountries(playerIds);
+  const playerCountries = await fetchPlayerCountries(playerIds);
+  const effectiveCountries = new Map();
+  for (const id of playerIds) {
+    const set = playerSportCountries.get(id) ?? playerCountries.get(id);
+    if (set && set.size) effectiveCountries.set(id, set);
+  }
 
-  // Ülke listesi: oyuncuların milli takım ülkelerinden, oyuncu sayısına (popülerliğe) göre sıralı.
+  // Ülke listesi: oyuncuların ülkelerinden, oyuncu sayısına (popülerliğe) göre sıralı.
   // 3'ten az oyuncusu olanlar (şehir/ülke karışması, tek oyunculu ülkeler) seçilebilir listeden çıkarılır.
   const countryCount = new Map();
   for (const set of effectiveCountries.values()) for (const c of set) countryCount.set(c, (countryCount.get(c) ?? 0) + 1);

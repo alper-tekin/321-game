@@ -140,4 +140,9 @@ test('ülke modu: spor ulusalitesi yasal vatandaşlığa tercih edilir (Kaká, M
   assert.ok(acceptsCountry('FC Barcelona', 'Q414', 'Messi'), 'Messi Arjantinli olmalı');
   assert.ok(!acceptsCountry('FC Barcelona', 'Q38', 'Messi'), 'Messi İtalyan sayılmamalı');
   assert.ok(!acceptsCountry('FC Barcelona', 'Q29', 'Messi'), 'Messi İspanyol sayılmamalı');
+  // Milli takımı olmayanlar da P27'den milliyetleriyle cevap olabilir
+  assert.ok(
+    data.players.filter((p) => p.countries.length).length > data.players.length * 0.8,
+    'oyuncuların çoğu bir ülkeye bağlı olmalı',
+  );
 });
