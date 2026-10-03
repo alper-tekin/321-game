@@ -568,6 +568,68 @@ async function fetchClubLogos(clubs) {
   }
 }
 
+// ---------- Oyuncu uyrukları ----------
+// Ülke modunda "takımda oynamış + ülke vatandaşı" kesişimi için Wikidata P27 (country of citizenship).
+// Çift uyruklu oyuncular için birden çok ülke kaydedilir. tm- önekli oyuncular Wikidata'da olmadığından
+// uyruksuz kalır; ülke modunda cevap olamazlar ama klasik modu etkilemez.
+// Oyuncu uyrukları (P27) oyun için sadeleştirilir: tarihsel devletler modern haleflerine
+// eşlenir (Hollanda Krallığı -> Hollanda, Alman devletleri -> Almanya…). SSCB, Çekoslovakya,
+// Osmanlı gibi futbol tarihinde anlamlı olanlar olduğu gibi kalır.
+const COUNTRY_FIX = {
+  Q174193: 'Q145', Q21: 'Q145', Q22: 'Q145', // İngiltere/İskoçya dahil eski BK -> Birleşik Krallık
+  Q29999: 'Q55', // Hollanda Krallığı -> Hollanda
+  Q172579: 'Q38', // İtalya Krallığı -> İtalya
+  Q713750: 'Q183', Q1206012: 'Q183', Q7318: 'Q183', Q43287: 'Q183', Q41304: 'Q183', // Alman devletleri -> Almanya
+  Q832861: 'Q36704', Q191077: 'Q36704', Q15102440: 'Q36704', // Yugoslavya varyantları -> Yugoslavya
+  Q154401: 'Q214', // Slovakya Cumhuriyeti -> Slovakya
+  Q618399: 'Q971', Q6500954: 'Q974', // Kongo/Zaire varyantları
+  Q2017684: 'Q948', Q457242: 'Q1028', // Tunus/Fas protektoraları
+  Q217169: 'Q954', Q890120: 'Q954', // Rodezya -> Zimbabve
+  Q15240466: 'Q229', // Britanya Kıbrısı -> Kıbrıs
+  Q129286: 'Q668', Q1775277: 'Q668', // Britanya Hindistanı -> Hindistan
+  Q1054923: 'Q8646', // Britanya Hong Kongu -> Hong Kong
+  Q6744657: 'Q233', Q7603765: 'Q233', // Malta varyantları
+  Q243610: 'Q212', Q133356: 'Q212', Q1508143: 'Q212', // Ukrayna varyantları
+  Q130229: 'Q230', Q132856: 'Q399', Q2895: 'Q184', Q2184: 'Q159', // Sovyet cumhuriyetleri
+  Q107258515: 'Q794', // Pehlevi İranı -> İran
+  Q127861: 'Q79', Q170468: 'Q79', // Mısır Hidivliği/BAC -> Mısır
+  Q45670: 'Q45', // Portekiz Krallığı
+  Q171150: 'Q28', Q600018: 'Q28', // Macaristan Krallığı
+};
+
+// Aramada yazılış farklılıklarını yakalamak için el yapımı eş anlamlılar (Wikidata'dan gelmez)
+const COUNTRY_ALIASES = {
+  Q145: ['İngiltere', 'Britanya', 'UK', 'Büyük Britanya'],
+  Q30: ['ABD', 'Amerika'],
+  Q15180: ['SSCB', 'Sovyet', 'Sovyetler Birliği'],
+  Q974: ['Zaire', 'Kongo Kinşasa', 'Demokratik Kongo'],
+  Q971: ['Kongo Brazzaville', 'Kongo Cumhuriyeti'],
+  Q878: ['BAE', 'UAE'],
+};
+
+async function fetchPlayerCountries(playerIds) {
+  console.log('Oyuncu uyrukları çekiliyor...');
+  const qids = playerIds.filter((id) => /^Q\d+$/.test(id));
+  const rows = await cachedById('player-countries-v1', qids, 400, async (batch) => {
+    const r = await sparql(`
+      SELECT ?p ?country WHERE {
+        VALUES ?p { ${batch.map((id) => `wd:${id}`).join(' ')} }
+        ?p wdt:P27 ?country.
+      }`);
+    await sleep(300);
+    return r.map((x) => [qid(x.p.value), qid(x.country.value)]);
+  });
+  const map = new Map(); // oyuncu kimliği -> Set(ülke kimliği)
+  for (const [p, c] of rows) {
+    if (!map.has(p)) map.set(p, new Set());
+    map.get(p).add(c);
+  }
+  // Tarihsel devletleri modern haleflerine indir
+  for (const [p, set] of map) map.set(p, new Set([...set].map((c) => COUNTRY_FIX[c] ?? c)));
+  console.log(`  ${map.size}/${qids.length} oyuncunun uyruğu bulundu`);
+  return map;
+}
+
 // Wikidata'nın henüz işlemediği transferler için elle düzeltmeler (data/overrides.json).
 // Format: { "add": { "<oyuncu QID>": ["<kulüp QID>", ...] }, "remove": { ... } }
 async function applyOverrides(clubs, playerClubs) {
@@ -638,10 +700,25 @@ async function main() {
   const playerIds = [...playerClubs.keys()].filter((p) => playerClubs.get(p).size >= 2);
   console.log(`  ${playerClubs.size} oyuncu bulundu, ${playerIds.length} tanesi en az 2 kulüpte oynamış`);
 
-  const countryIds = [...new Set(clubs.map((c) => c.country).filter(Boolean))];
-  const countryLabels = await fetchLabels(countryIds, 'ulke');
   // Sadece Wikidata kimlikli oyuncular için etiket çekilir (tm- önekli olanların ismi Transfermarkt'tan gelir)
   const playerLabels = await fetchLabels(playerIds.filter((id) => /^Q\d+$/.test(id)), 'oyuncu');
+  const playerCountries = await fetchPlayerCountries(playerIds);
+
+  // Ülke listesi: oyuncuların uyruklarından, oyuncu sayısına (popülerliğe) göre sıralı.
+  // 3'ten az oyuncusu olanlar (şehir/ülke karışması, tek oyunculu ülkeler) seçilebilir listeden çıkarılır.
+  const countryCount = new Map();
+  for (const set of playerCountries.values()) for (const c of set) countryCount.set(c, (countryCount.get(c) ?? 0) + 1);
+  const countryIds = [...new Set([...clubs.map((c) => c.country).filter(Boolean), ...countryCount.keys()])];
+  const countryLabels = await fetchLabels(countryIds, 'ulke');
+  const outCountries = [...countryCount.entries()]
+    .filter(([, pop]) => pop >= 3)
+    .map(([id, pop]) => {
+      const name = pickName(countryLabels.get(id));
+      return name ? { id, name, pop, aliases: COUNTRY_ALIASES[id] ?? [] } : null;
+    })
+    .filter(Boolean)
+    .sort((a, b) => b.pop - a.pop);
+  console.log(`  ${outCountries.length} ülke listelendi`);
 
   const outClubs = clubs
     .map((c) => {
@@ -668,12 +745,12 @@ async function main() {
       if (!name) return null;
       const cl = [...playerClubs.get(p)].map((c) => clubIndex.get(c)).filter((i) => i !== undefined);
       if (cl.length < 2) return null;
-      return { id: p, name, aliases: entry ? aliasList(entry, name) : [], pop: playerPop.get(p) ?? 0, clubs: cl };
+      return { id: p, name, aliases: entry ? aliasList(entry, name) : [], pop: playerPop.get(p) ?? 0, clubs: cl, countries: [...(playerCountries.get(p) ?? [])] };
     })
     .filter(Boolean)
     .sort((a, b) => b.pop - a.pop);
 
-  const out = { builtAt: new Date().toISOString(), clubs: outClubs, players: outPlayers };
+  const out = { builtAt: new Date().toISOString(), clubs: outClubs, countries: outCountries, players: outPlayers };
   await fs.writeFile(OUT_FILE, JSON.stringify(out));
   const size = (await fs.stat(OUT_FILE)).size;
   console.log(`Bitti: ${outClubs.length} kulüp, ${outPlayers.length} oyuncu, ${(size / 1e6).toFixed(1)} MB -> ${OUT_FILE}`);

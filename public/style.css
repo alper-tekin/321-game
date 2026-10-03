@@ -534,6 +534,15 @@ button.link:hover { color: var(--text); filter: none; }
 .club-card.rival { border-color: color-mix(in srgb, var(--rival) 45%, var(--line)); }
 .club-card.rival .who { color: var(--rival); }
 .vs { align-self: center; font-weight: 900; color: var(--muted); font-size: 20px; text-shadow: 0 0 16px color-mix(in srgb, var(--muted) 40%, transparent); }
+/* Ülke kartı (ülke modu): logo yerine bayrak yuvarlağı */
+.club-card .flag {
+  height: 46px; width: 46px; margin: 2px 0; align-self: center;
+  display: grid; place-items: center; font-size: 26px;
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--text) 6%, transparent);
+  border: 1px solid var(--line);
+}
+.picked-box .club { display: flex; align-items: center; justify-content: center; gap: 8px; }
 @keyframes reveal { from { transform: translateY(12px) scale(.95); opacity: 0; } to { transform: none; opacity: 1; } }
 
 /* ---------- Tahmin ---------- */

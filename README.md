@@ -9,17 +9,23 @@ reveals a club. The first player to name a footballer who has played for **both 
 
 1. One player creates a room and shares the 4-digit code (or the invite link).
 2. The other player joins with the code.
-3. Each round, both players secretly pick a club. Picks are revealed at the same time after the countdown.
-   Each club can be picked only once per match — once either player has picked a club, neither can pick it again.
-4. Type a player who has played for both clubs. Small typos and surname-only answers are accepted
+3. The host picks a game mode:
+   - **Classic** — both players secretly pick a club each round. Picks are revealed at the same time after
+     the countdown; name a player who has played for **both clubs**.
+   - **Country** — one player secretly picks a club and the other a country (roles alternate every round).
+     Name a player who has played for that club **and is a citizen of that country**.
+4. Each club (and, in country mode, each country) can be picked only once per match — once either player
+   has picked it, neither can pick it again.
+5. Type a player who matches. Small typos and surname-only answers are accepted
    (`snejder` → Wesley Sneijder).
-5. If a correct answer is rejected because the data is missing a transfer, the opponent can press
+6. If a correct answer is rejected because the data is missing a transfer, the opponent can press
    **Doğru say** ("count it") to award the point anyway.
-6. First to the target score (3, 5, 7 or 10) wins the match.
+7. First to the target score (3, 5, 7 or 10) wins the match.
 
-If a player doesn't pick within 20 seconds, a random popular club is chosen for them. If the two clubs have
-no player in common, the round is void. If neither player names a common player within 15 seconds, the round
-is passed.
+If a player doesn't pick within 20 seconds, a random popular club (or country) is chosen for them. In
+classic mode, if both players pick the same club the round is void and the picks are not "burned". If the
+picks have no matching player, the round is void. If neither player names a valid player within 15 seconds,
+the round is passed.
 
 ## Running locally
 
@@ -37,8 +43,10 @@ local IP address (e.g. `http://192.168.0.13:3210`).
 
 Club and player data is built from three open sources and saved to `data/football.json`:
 
-1. **[Wikidata](https://www.wikidata.org)** (CC0): clubs, players, club history, and names and
-   aliases in Turkish and English.
+1. **[Wikidata](https://www.wikidata.org)** (CC0): clubs, players, club history, names and
+   aliases in Turkish and English, and player nationalities (P27). Historical states are mapped to
+   their modern successors (e.g. Kingdom of the Netherlands → Netherlands); meaningful football
+   nations like the USSR, Czechoslovakia and the Ottoman Empire are kept as-is.
 2. **[Transfermarkt transfer history](https://github.com/dcaribou/transfermarkt-datasets)** (CC0):
    historical transfers that Wikidata is missing (dataset up to July 6, 2026).
 3. **Wikipedia current squads** (CC BY-SA): squad templates from English Wikipedia club pages,

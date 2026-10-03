@@ -93,3 +93,38 @@ test('Beşiktaş + Leicester (Ndidi, Wikipedia kadrosu)', () => {
   assert.ok(accepts('Beşiktaş', 'Leicester City FC', 'Ndidi'));
   assert.ok(accepts('Beşiktaş', 'Leicester City FC', 'Wilfred Ndidi'));
 });
+
+// ---------- Ülke modu: takım + ülke kesişimi ----------
+
+function country(id) {
+  const c = data.countries.find((x) => x.id === id);
+  assert.ok(c, `ülke bulunamadı: ${id}`);
+  return c;
+}
+
+function acceptsCountry(clubName, countryId, text) {
+  const answers = data.clubCountryPlayers(club(clubName), country(countryId).id);
+  return data.match(text, answers) >= 0;
+}
+
+test('ülke modu: takım + uyruk kesişimi doğru çalışır', () => {
+  // Sneijder Hollandalı ve Galatasaray'da oynadı
+  assert.ok(acceptsCountry('Galatasaray', 'Q55', 'Sneijder'));
+  // Icardi Arjantinli ve Galatasaray'da oynadı
+  assert.ok(acceptsCountry('Galatasaray', 'Q414', 'Icardi'));
+  // Hakan Şükür Türk ama Inter'de oynamadı; Sneijder Inter'de oynadı ama Türk değil
+  assert.ok(!acceptsCountry('Galatasaray', 'Q55', 'Hakan Şükür'), 'Hakan Şükür Hollandalı değil');
+  assert.ok(!acceptsCountry('Galatasaray', 'Q43', 'Sneijder'), 'Sneijder Türk değil');
+  assert.ok(!acceptsCountry('Galatasaray', 'Q43', 'Quaresma'), 'Quaresma Galatasarayda oynamadı');
+});
+
+test('ülke modu: ülkeler oyuncu sayısına göre sıralı ve takma adlı', () => {
+  assert.ok(data.countries.length > 100, 'yeterince ülke olmalı');
+  const pops = data.countries.map((c) => c.pop);
+  assert.deepEqual(pops, [...pops].sort((a, b) => b - a), 'popülerlik sırası bozulmamalı');
+  // Türkçe aramada takma adlar bulunmalı
+  const abd = data.countries.find((c) => c.aliases?.includes('ABD'));
+  assert.equal(abd?.name, 'Amerika Birleşik Devletleri');
+  const sscb = data.countries.find((c) => c.aliases?.includes('SSCB'));
+  assert.ok(sscb, 'SSCB takma adı olmalı');
+});

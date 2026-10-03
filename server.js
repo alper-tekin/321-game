@@ -21,6 +21,9 @@ const clubsJson = JSON.stringify(data.clubs.map((c) => [c.id, c.name, c.country,
 // Tahmin kutusundaki isim önerileri için oyuncu isimleri (popülerlik sırasıyla).
 // Liste TÜM oyuncu havuzudur; hangi isimlerin geçerli cevap olduğunu ele vermez.
 const playersJson = JSON.stringify([...new Set(data.players.map((p) => p.name))]);
+
+// Ülke modundaki ülke seçimi için ülkeler (oyuncu sayısına göre popülerlik sırasıyla)
+const countriesJson = JSON.stringify(data.countries.map((c) => [c.id, c.name, c.aliases ?? []]));
 const playersEtag = `"${crypto.createHash('sha1').update(playersJson).digest('hex').slice(0, 16)}"`;
 const playersGz = zlib.gzipSync(playersJson);
 
@@ -47,6 +50,10 @@ const server = http.createServer((req, res) => {
     }
     res.writeHead(200, headers);
     return res.end(playersJson);
+  }
+  if (url.pathname === '/api/countries') {
+    res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-cache' });
+    return res.end(countriesJson);
   }
   if (url.pathname === '/api/matches') {
     // Giriş ekranındaki "Son maçlar" listesi (bellekte tutulur, sunucu yeniden başlarsa boşalır)

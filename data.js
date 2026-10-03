@@ -6,9 +6,11 @@ import { normalize, closeEnough } from './public/normalize.js';
 export function loadData(file) {
   const raw = JSON.parse(fs.readFileSync(file, 'utf8'));
   const clubs = raw.clubs;
+  const countries = raw.countries ?? [];
   const players = raw.players.map((p) => ({ ...p, keys: playerKeys(p) }));
 
   const clubIndex = new Map(clubs.map((c, i) => [c.id, i]));
+  const countryIndex = new Map(countries.map((c) => [c.id, c]));
   const clubPlayers = clubs.map(() => []);
   players.forEach((p, i) => p.clubs.forEach((c) => clubPlayers[c].push(i)));
 
@@ -25,12 +27,18 @@ export function loadData(file) {
   return {
     builtAt: raw.builtAt,
     clubs,
+    countries,
     players,
 
     commonPlayers(a, b) {
       if (a === b) return clubPlayers[a].slice();
       const set = new Set(clubPlayers[a]);
       return clubPlayers[b].filter((i) => set.has(i)); // oyuncular popülerliğe göre sıralı geliyor
+    },
+
+    // Ülke modu: kulüpte oynamış VE belirtilen ülkenin vatandaşı oyuncular
+    clubCountryPlayers(club, countryId) {
+      return clubPlayers[club].filter((i) => players[i].countries?.includes(countryId));
     },
 
     // Cevabı, geçerli cevaplar arasında arar. Bulursa oyuncu indeksini döner.
@@ -55,6 +63,10 @@ export function loadData(file) {
 
     clubName(i) {
       return clubs[i]?.name;
+    },
+
+    countryName(id) {
+      return countryIndex.get(id)?.name;
     },
   };
 }

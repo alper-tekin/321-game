@@ -9,6 +9,7 @@ let state = null;       // sunucudan gelen oda durumu
 let clockOffset = 0;    // sunucu saati - yerel saat
 let screenKey = null;   // ekran değişmediyse input'ları silmemek için
 let clubs = [];         // [{i, name, country, keys}]
+let countries = [];     // ülke modu: [{id, name, key}] (oyuncu sayısına göre popülerlik sırasıyla)
 let playerNames = [];   // isim önerileri: popülerlik sırasıyla tüm oyuncu isimleri
 let playerKeys = null;  // playerNames'in normalize edilmiş hâli (ilk kullanımda hesaplanır)
 const seenGuesses = new Set(); // sadece yeni tahminler animasyonla gelsin
@@ -106,6 +107,30 @@ function scoreboard() {
 }
 
 const timerBar = () => `<div class="timer" id="timer"><i></i></div>`;
+
+async function loadCountries() {
+  const res = await fetch('/api/countries', { cache: 'no-cache' });
+  const raw = await res.json();
+  countries = raw.map(([id, name, aliases]) => ({
+    id, name,
+    keys: [...new Set([name, ...aliases].map(normalize))],
+  }));
+}
+
+// Ülke araması: 3 = baştan eşleşme, 1 = içerme. Liste popülerlik sırasıyla geldiği
+// için aynı puanda sıra korunur. Takma adlar (ABD, SSCB, İngiltere…) da aranır.
+function searchCountries(q) {
+  const n = normalize(q);
+  if (!n) return countries.slice(0, 8);
+  const scored = [];
+  for (const c of countries) {
+    let s = 0;
+    if (c.keys.some((k) => k.startsWith(n))) s = 3;
+    else if (n.length >= 3 && c.keys.some((k) => k.includes(n))) s = 1;
+    if (s) scored.push([s, c]);
+  }
+  return scored.sort((a, b) => b[0] - a[0]).slice(0, 8).map((x) => x[1]);
+}
 
 // ---------- Ekranlar ----------
 
@@ -210,11 +235,18 @@ function renderLobby() {
     ${isHost ? `
       <div class="card stack">
         <div>
+          <label for="mode">Mod</label>
+          <select id="mode">
+            <option value="classic" ${state.mode === 'country' ? '' : 'selected'}>Klasik — takım + takım</option>
+            <option value="country" ${state.mode === 'country' ? 'selected' : ''}>Ülke — takım + ülke</option>
+          </select>
+        </div>
+        <div>
           <label for="target">Kaç puanda biter?</label>
           <select id="target">${[3, 5, 7, 10].map((n) => `<option ${n === state.target ? 'selected' : ''}>${n}</option>`).join('')}</select>
         </div>
         <button class="primary full" id="start" ${full ? '' : 'disabled'}>Başla</button>
-      </div>` : `<p class="center muted">${full ? 'Kurucunun oyunu başlatması bekleniyor…' : ''}</p>`}
+      </div>` : `<p class="center muted">${full ? `Kurucunun oyunu başlatması bekleniyor… (${state.mode === 'country' ? 'Ülke modu' : 'Klasik mod'})` : ''}</p>`}
     <div class="grow"></div>
     <button class="link" id="leave">Odadan çık</button>`;
 
@@ -224,7 +256,7 @@ function renderLobby() {
       else { await navigator.clipboard.writeText(link); toast('Link kopyalandı'); }
     } catch {}
   });
-  $('#start')?.addEventListener('click', () => send({ t: 'start', target: Number($('#target').value) }));
+  $('#start')?.addEventListener('click', () => send({ t: 'start', target: Number($('#target').value), mode: $('#mode').value }));
   $('#leave').addEventListener('click', leave);
 }
 
@@ -237,49 +269,65 @@ function renderPick(same) {
       <div class="stack" id="pick-area"></div>
       <div class="status-line" id="rival-status"></div>`;
   }
+  const myKind = mine.pickKind ?? 'club';
+  const theirKind = other.pickKind ?? 'club';
   $('#rival-status').innerHTML = other.picked
-    ? '✓ Rakip takımını seçti'
-    : `<span class="spinner"></span> ${esc(other.name)} takım seçiyor…`;
+    ? `✓ Rakip ${theirKind === 'country' ? 'ülke' : 'takım'} seçti`
+    : `<span class="spinner"></span> ${esc(other.name)} ${theirKind === 'country' ? 'ülke' : 'takım'} seçiyor…`;
 
   const area = $('#pick-area');
-  if (mine.club) {
+  const isCountry = myKind === 'country';
+  const myPick = isCountry ? mine.country : mine.club;
+  if (myPick) {
     area.innerHTML = `
       <div class="card picked-box">
         <p class="muted">Seçimin (rakip göremez)</p>
-        ${logoImg(mine.club.logo, 'club-logo')}
-        <div class="club">${esc(mine.club.name)}</div>
-        <p class="muted small">${esc(mine.club.country)}</p>
+        ${isCountry ? '' : logoImg(myPick.logo, 'club-logo')}
+        <div class="club">${esc(myPick.name)}</div>
+        <p class="muted small">${isCountry ? 'ülke' : esc(myPick.country)}</p>
       </div>
       <button class="link" id="change">Değiştir</button>`;
-    $('#change').addEventListener('click', () => { mine.club = null; renderPick(true); });
+    $('#change').addEventListener('click', () => {
+      if (isCountry) mine.country = null; else mine.club = null;
+      renderPick(true);
+    });
     return;
   }
-  if ($('#club-search')) return; // arama kutusu zaten açık; yazılanı silme
+  if ($('#pick-search')) return; // arama kutusu zaten açık; yazılanı silme
   area.innerHTML = `
     <div>
-      <p class="phase-title">Takımını seç</p>
-      <p class="muted small">Rakibin hangi takımı seçtiğini geri sayımdan sonra göreceksin. Bu maçta seçilen takımları kimse bir daha seçemez.</p>
+      <p class="phase-title">${isCountry ? 'Ülkeni seç' : 'Takımını seç'}</p>
+      <p class="muted small">Rakibin seçimini geri sayımdan sonra göreceksin. Bu maçta seçilen ${isCountry ? 'ülkeler' : 'takımlar'} bir daha seçilemez.</p>
     </div>
-    <input id="club-search" placeholder="Takım ara: Galatasaray, Inter…" autocomplete="off" autocapitalize="off" spellcheck="false">
-    <div class="results" id="club-results"></div>`;
-  const input = $('#club-search');
+    <input id="pick-search" placeholder="${isCountry ? 'Ülke ara: Türkiye, Brezilya…' : 'Takım ara: Galatasaray, Inter…'}" autocomplete="off" autocapitalize="off" spellcheck="false">
+    <div class="results" id="pick-results"></div>`;
+  const input = $('#pick-search');
+  const list = isCountry ? countries : clubs;
+  const used = new Set(isCountry ? (state.usedCountries || []) : (state.usedClubs || []));
   const update = () => {
-    const used = new Set(state.usedClubs || []);
-    $('#club-results').innerHTML = searchClubs(input.value).map((c) => {
-      const main = `<span class="opt-main">${logoImg(c.logo, 'logo-sm')}<span class="opt-name">${esc(c.name)}</span></span>`;
+    const found = isCountry ? searchCountries(input.value) : searchClubs(input.value);
+    $('#pick-results').innerHTML = found.map((c) => {
+      const main = isCountry
+        ? `<span class="opt-main"><span class="opt-name">${esc(c.name)}</span></span>`
+        : `<span class="opt-main">${logoImg(c.logo, 'logo-sm')}<span class="opt-name">${esc(c.name)}</span></span>`;
       return used.has(c.id)
         ? `<button class="club-opt" disabled>${main}<small>bu maçta seçildi</small></button>`
-        : `<button class="club-opt" data-id="${c.id}">${main}<small>${esc(c.country)}</small></button>`;
+        : `<button class="club-opt" data-id="${c.id}">${main}<small>${isCountry ? 'ülke' : esc(c.country)}</small></button>`;
     }).join('');
   };
   input.addEventListener('input', update);
-  input.addEventListener('keydown', (e) => { if (e.key === 'Enter') $('#club-results .club-opt:not([disabled])')?.click(); });
-  $('#club-results').addEventListener('click', (e) => {
+  input.addEventListener('keydown', (e) => { if (e.key === 'Enter') $('#pick-results .club-opt:not([disabled])')?.click(); });
+  $('#pick-results').addEventListener('click', (e) => {
     const btn = e.target.closest('.club-opt');
     if (!btn) return;
-    const c = clubs.find((x) => x.id === btn.dataset.id);
-    mine.club = { name: c.name, country: c.country, logo: c.logo };
-    send({ t: 'pick', club: c.id });
+    const c = list.find((x) => x.id === btn.dataset.id);
+    if (isCountry) {
+      mine.country = { id: c.id, name: c.name };
+      send({ t: 'pickCountry', country: c.id });
+    } else {
+      mine.club = { name: c.name, country: c.country, logo: c.logo };
+      send({ t: 'pick', club: c.id });
+    }
     renderPick(true);
   });
   update();
@@ -329,11 +377,15 @@ function renderCountdown(same) {
 
 function versus() {
   const a = me(), b = rival();
+  // Ülke modunda bir taraf kulüp, diğer taraf ülke kartı gösterir
+  const card = (p, cls) => p.pickKind === 'country'
+    ? `<div class="club-card ${cls} country"><span class="who">${esc(p.name)}</span><span class="flag">🌍</span><span class="name">${esc(p.country?.name ?? '')}</span><span class="muted small">ülke</span></div>`
+    : `<div class="club-card ${cls}"><span class="who">${esc(p.name)}</span>${logoImg(p.club?.logo, 'club-logo')}<span class="name">${esc(p.club?.name ?? '')}</span><span class="muted small">${esc(p.club?.country ?? '')}</span></div>`;
   return `
     <div class="versus">
-      <div class="club-card me"><span class="who">${esc(a.name)}</span>${logoImg(a.club?.logo, 'club-logo')}<span class="name">${esc(a.club?.name)}</span><span class="muted small">${esc(a.club?.country)}</span></div>
+      ${card(a, 'me')}
       <div class="vs">+</div>
-      <div class="club-card rival"><span class="who">${esc(b.name)}</span>${logoImg(b.club?.logo, 'club-logo')}<span class="name">${esc(b.club?.name)}</span><span class="muted small">${esc(b.club?.country)}</span></div>
+      ${card(b, 'rival')}
     </div>`;
 }
 
@@ -345,7 +397,7 @@ function renderGuess(same, prev) {
       ${timerBar()}
       <div class="guess-area">
         <form class="guess-form" id="guess-form" autocomplete="off">
-          <input id="guess" placeholder="İki takımda da oynamış oyuncu…" autocomplete="off" autocapitalize="words" spellcheck="false" enterkeyhint="send">
+          <input id="guess" placeholder="${state.mode === 'country' ? 'Bu takımda oynamış, bu ülkeden bir oyuncu…' : 'İki takımda da oynamış oyuncu…'}" autocomplete="off" autocapitalize="words" spellcheck="false" enterkeyhint="send">
           <button class="primary">Gönder</button>
         </form>
         <div class="suggest" id="suggest" hidden></div>
@@ -455,7 +507,9 @@ function renderResult() {
     sub = 'İkiniz de aynı takımı seçtiniz, tur iptal. Yeni turda farklı takımlar seçin.';
   } else if (r.reason === 'noCommon') {
     title = 'Ortak oyuncu yok';
-    sub = 'Verilere göre bu iki takımda birden oynamış futbolcu bulunamadı. Tur geçersiz.';
+    sub = state.mode === 'country'
+      ? 'Verilere göre bu takımda oynamış bu ülkeden futbolcu bulunamadı. Tur geçersiz.'
+      : 'Verilere göre bu iki takımda birden oynamış futbolcu bulunamadı. Tur geçersiz.';
   } else if (r.reason === 'timeout') {
     title = 'Süre doldu';
     sub = 'Kimse bulamadı.';
@@ -475,7 +529,7 @@ function renderResult() {
   const hitName = r.guess?.player?.name;
   app.innerHTML = `
     ${scoreboard()}
-    ${a.club ? versus() : ''}
+    ${a.club || a.country ? versus() : ''}
     <div class="banner ${cls}"><h2>${title}</h2><p>${sub}</p></div>
     ${r.total ? `
       <div class="card stack">
@@ -546,6 +600,7 @@ async function loadPlayers() {
 
 render();
 loadClubs().catch(() => toast('Takım listesi yüklenemedi.'));
+loadCountries().catch(() => toast('Ülke listesi yüklenemedi.'));
 loadPlayers().catch(() => {}); // öneri listesi yüklenmezse sessizce devam et
 connect();
 requestAnimationFrame(tick);

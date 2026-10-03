@@ -37,6 +37,7 @@ export class GameServer {
       switch (msg.t) {
         case 'start': return room.start(player, msg);
         case 'pick': return room.pick(player, msg.club);
+        case 'pickCountry': return room.pickCountry(player, msg.country);
         case 'guess': return room.guess(player, msg.text);
         case 'accept': return room.accept(player, msg.guessId);
         case 'next': return room.ready(player);
@@ -125,7 +126,9 @@ class Room {
     this.data = data;
     this.onMatchEnd = onMatchEnd;
     this.players = [];
+    this.mode = 'classic'; // classic (takım + takım) | country (takım + ülke)
     this.used = new Set(); // bu maçta seçilmiş kulüpler (indeks); iki oyuncu için ortak kilit
+    this.usedCountries = new Set(); // bu maçta seçilmiş ülkeler (kimlik); ülke modu kilidi
     this.phase = 'lobby'; // lobby | pick | countdown | guess | result | over
     this.target = 5;
     this.round = 0;
@@ -137,7 +140,8 @@ class Room {
   }
 
   resetRound() {
-    this.picks = new Map(); // playerId -> club index
+    this.picks = new Map(); // playerId -> kulüp indeksi
+    this.countryPicks = new Map(); // playerId -> ülke kimliği (ülke modu)
     this.answers = [];
     this.guesses = [];
     this.roundWinner = null;
@@ -166,6 +170,7 @@ class Room {
       this.phase = 'lobby';
       this.players.forEach((p) => { p.score = 0; p.ready = false; });
       this.used.clear();
+      this.usedCountries.clear();
       this.resetRound();
     }
     this.broadcast();
@@ -175,14 +180,31 @@ class Room {
     return this.players.find((p) => p !== player);
   }
 
-  start(player, { target }) {
+  start(player, { target, mode }) {
     if (this.phase !== 'lobby' && this.phase !== 'over') return;
     if (this.players.length < 2) return send(player.conn, { t: 'error', msg: 'Rakip bekleniyor.' });
     if ([3, 5, 7, 10].includes(target)) this.target = target;
+    if (mode === 'country' || mode === 'classic') this.mode = mode;
     this.players.forEach((p) => { p.score = 0; });
-    this.used.clear(); // yeni maç: takım kilitleri sıfırlanır
+    this.used.clear(); // yeni maç: kilitler sıfırlanır
+    this.usedCountries.clear();
     this.round = 0;
     this.startPick();
+  }
+
+  // Ülke modunda roller turlar boyunca sırayla değişir: bir tur bir oyuncu takım seçer,
+  // sonraki tur öbürü. Klasik modda herkes takım seçer.
+  clubPicker() {
+    return this.mode === 'country' ? this.players[(this.round - 1 + this.players.length) % this.players.length] : null;
+  }
+
+  pickKind(player) {
+    if (this.mode !== 'country') return 'club';
+    return this.clubPicker() === player ? 'club' : 'country';
+  }
+
+  bothPicked() {
+    return this.players.every((p) => (this.pickKind(p) === 'club' ? this.picks.has(p.id) : this.countryPicks.has(p.id)));
   }
 
   startPick() {
@@ -194,38 +216,69 @@ class Room {
 
   pick(player, clubId) {
     if (this.phase !== 'pick') return;
+    if (this.pickKind(player) !== 'club') return send(player.conn, { t: 'error', msg: 'Bu turda sen ülke seçeceksin.' });
     const club = this.data.clubIndexOf(clubId);
     if (club < 0) return send(player.conn, { t: 'error', msg: 'Takım bulunamadı, sayfayı yenile.' });
     if (this.used.has(club)) return send(player.conn, { t: 'error', msg: 'Bu takım bu maçta zaten seçildi.' });
     this.picks.set(player.id, club);
-    if (this.players.every((p) => this.picks.has(p.id))) this.startCountdown();
+    if (this.bothPicked()) this.startCountdown();
     else this.broadcast();
   }
 
-  // Süre biterse seçmeyen oyuncuya, bu maçta kullanılmamış popüler kulüplerden rastgele biri verilir
+  pickCountry(player, countryId) {
+    if (this.phase !== 'pick') return;
+    if (this.pickKind(player) !== 'country') return send(player.conn, { t: 'error', msg: 'Bu turda sen takım seçeceksin.' });
+    if (!this.data.countryName(countryId)) return send(player.conn, { t: 'error', msg: 'Ülke bulunamadı, sayfayı yenile.' });
+    if (this.usedCountries.has(countryId)) return send(player.conn, { t: 'error', msg: 'Bu ülke bu maçta zaten seçildi.' });
+    this.countryPicks.set(player.id, countryId);
+    if (this.bothPicked()) this.startCountdown();
+    else this.broadcast();
+  }
+
+  // Süre biterse seçmeyen oyuncuya, bu maçta kullanılmamış popüler seçeneklerden rastgele biri verilir
   autoPick() {
-    const taken = new Set(this.picks.values()); // bu turda zaten seçilenler (aynı takım çakışmasın)
     for (const p of this.players) {
-      if (this.picks.has(p.id)) continue;
-      const popular = Math.min(80, this.data.clubs.length);
-      let pool = [];
-      for (let i = 0; i < popular; i++) if (!this.used.has(i) && !taken.has(i)) pool.push(i);
-      if (!pool.length) for (let i = popular; i < this.data.clubs.length; i++) if (!this.used.has(i) && !taken.has(i)) pool.push(i);
-      if (!pool.length) pool = [0]; // teorik: her şey kullanılmışsa
-      const idx = pool[Math.floor(Math.random() * pool.length)];
-      this.picks.set(p.id, idx);
-      taken.add(idx);
+      if (this.pickKind(p) === 'club') {
+        if (this.picks.has(p.id)) continue;
+        const taken = new Set(this.picks.values()); // bu turda zaten seçilenler (aynı takım çakışmasın)
+        const popular = Math.min(80, this.data.clubs.length);
+        let pool = [];
+        for (let i = 0; i < popular; i++) if (!this.used.has(i) && !taken.has(i)) pool.push(i);
+        if (!pool.length) for (let i = popular; i < this.data.clubs.length; i++) if (!this.used.has(i) && !taken.has(i)) pool.push(i);
+        if (!pool.length) pool = [0]; // teorik: her şey kullanılmışsa
+        const idx = pool[Math.floor(Math.random() * pool.length)];
+        this.picks.set(p.id, idx);
+        taken.add(idx);
+      } else {
+        if (this.countryPicks.has(p.id)) continue;
+        const popular = this.data.countries.slice(0, 40); // oyuncu sayısına göre en popüler ülkeler
+        let pool = popular.filter((c) => !this.usedCountries.has(c.id));
+        if (!pool.length) pool = this.data.countries.filter((c) => !this.usedCountries.has(c.id));
+        if (!pool.length) pool = this.data.countries; // teorik: her şey kullanılmışsa
+        this.countryPicks.set(p.id, pool[Math.floor(Math.random() * pool.length)].id);
+      }
     }
     this.startCountdown();
   }
 
   startCountdown() {
-    const [a, b] = this.players.map((p) => this.picks.get(p.id));
-    // İki oyuncu aynı takımı seçtiyse tur anlamsız olur: iptal edip yeni turdan devam
-    if (a === b) return this.endRound(null, 'sameClub');
-    // Seçimler açıklandı: bu maçta bir daha hiç kimse seçemesin (iptal edilen tur yakmaz)
-    this.players.forEach((p) => this.used.add(this.picks.get(p.id)));
-    this.answers = this.data.commonPlayers(a, b);
+    if (this.mode === 'country') {
+      const clubPicker = this.clubPicker();
+      const countryPicker = this.opponent(clubPicker);
+      const club = this.picks.get(clubPicker.id);
+      const country = this.countryPicks.get(countryPicker.id);
+      // Seçimler açıklandı: bu maçta bir daha hiç kimse seçemesin (iptal edilen tur yakmaz)
+      this.used.add(club);
+      this.usedCountries.add(country);
+      this.answers = this.data.clubCountryPlayers(club, country);
+    } else {
+      const [a, b] = this.players.map((p) => this.picks.get(p.id));
+      // İki oyuncu aynı takımı seçtiyse tur anlamsız olur: iptal edip yeni turdan devam
+      if (a === b) return this.endRound(null, 'sameClub');
+      // Seçimler açıklandı: bu maçta bir daha hiç kimse seçemesin (iptal edilen tur yakmaz)
+      this.players.forEach((p) => this.used.add(this.picks.get(p.id)));
+      this.answers = this.data.commonPlayers(a, b);
+    }
     this.setPhase('countdown', COUNTDOWN_MS, () => {
       if (this.answers.length === 0) this.endRound(null, 'noCommon');
       else this.setPhase('guess', GUESS_MS, () => this.endRound(null, 'timeout'));
@@ -245,13 +298,26 @@ class Room {
     if (hit < 0) {
       const known = this.data.lookup(text);
       const p = known >= 0 ? this.data.players[known] : null;
-      const missing = p
-        ? [...new Set(this.players.map((pl) => this.picks.get(pl.id)).filter((c) => !p.clubs.includes(c)))]
-        : [];
-      if (missing.length) {
-        g.note = `${p.name} verilere göre ${missing.map((c) => this.data.clubName(c)).join(' ve ')} formasını giymemiş.`;
+      if (this.mode === 'country') {
+        const clubPicker = this.clubPicker();
+        const club = this.picks.get(clubPicker.id);
+        const country = this.countryPicks.get(this.opponent(clubPicker).id);
+        const noClub = p && !p.clubs.includes(club);
+        const noCountry = p && !(p.countries ?? []).includes(country);
+        if (noClub && noCountry) g.note = `${p.name} ${this.data.clubName(club)} forması giymemiş ve ${this.data.countryName(country)} vatandaşı da değil.`;
+        else if (noClub) g.note = `${p.name} verilere göre ${this.data.clubName(club)} formasını giymemiş.`;
+        else if (noCountry) g.note = `${p.name} ${this.data.countryName(country)} vatandaşı değil.`;
+        else if (p && !p.countries?.length) g.note = `${p.name}'in uyruk bilgisi veride yok.`;
+        else g.note = 'Bu isim bu takım ve ülke kombinasyonuna uyan oyuncular arasında yok.';
       } else {
-        g.note = 'Bu isim bu iki takımın ortak oyuncuları arasında yok.';
+        const missing = p
+          ? [...new Set(this.players.map((pl) => this.picks.get(pl.id)).filter((c) => !p.clubs.includes(c)))]
+          : [];
+        if (missing.length) {
+          g.note = `${p.name} verilere göre ${missing.map((c) => this.data.clubName(c)).join(' ve ')} formasını giymemiş.`;
+        } else {
+          g.note = 'Bu isim bu iki takımın ortak oyuncuları arasında yok.';
+        }
       }
     }
     this.guesses.push(g);
@@ -318,13 +384,17 @@ class Room {
       phase: this.phase,
       round: this.round,
       target: this.target,
+      mode: this.mode,
       usedClubs: [...this.used].map((i) => data.clubs[i].id),
+      usedCountries: [...this.usedCountries],
       deadline: this.deadline,
       now: Date.now(),
       you: me.id,
       host: this.players[0]?.id,
       players: this.players.map((p) => {
         const pick = this.picks.get(p.id);
+        const countryPick = this.countryPicks.get(p.id);
+        const kind = this.pickKind(p);
         const showPick = p === me || revealed;
         return {
           id: p.id,
@@ -332,8 +402,10 @@ class Room {
           score: p.score,
           online: !!p.conn,
           ready: p.ready,
-          picked: pick !== undefined,
-          club: showPick && pick !== undefined ? { i: pick, name: data.clubs[pick].name, country: data.clubs[pick].country, logo: data.clubs[pick].logo ?? null } : null,
+          picked: kind === 'club' ? pick !== undefined : countryPick !== undefined,
+          pickKind: kind,
+          club: showPick && kind === 'club' && pick !== undefined ? { i: pick, name: data.clubs[pick].name, country: data.clubs[pick].country, logo: data.clubs[pick].logo ?? null } : null,
+          country: showPick && kind === 'country' && countryPick !== undefined ? { id: countryPick, name: data.countryName(countryPick) } : null,
         };
       }),
       guesses: this.guesses.map((g) => ({
