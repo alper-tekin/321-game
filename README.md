@@ -10,6 +10,7 @@ reveals a club. The first player to name a footballer who has played for **both 
 1. One player creates a room and shares the 4-digit code (or the invite link).
 2. The other player joins with the code.
 3. Each round, both players secretly pick a club. Picks are revealed at the same time after the countdown.
+   A club you have already picked in this match can't be picked again.
 4. Type a player who has played for both clubs. Small typos and surname-only answers are accepted
    (`snejder` → Wesley Sneijder).
 5. If a correct answer is rejected because the data is missing a transfer, the opponent can press

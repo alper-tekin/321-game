@@ -16,7 +16,10 @@ function conn() {
 
 // game.js'in kullandığı arayüzün en küçük sahte veri kümesi
 const data = {
-  clubs: [{ name: 'Galatasaray', country: 'Türkiye' }, { name: 'Fenerbahçe', country: 'Türkiye' }],
+  clubs: [
+    { id: 'gala', name: 'Galatasaray', country: 'Türkiye' },
+    { id: 'fb', name: 'Fenerbahçe', country: 'Türkiye' },
+  ],
   players: [],
   clubIndexOf: (id) => (id === 'gala' ? 0 : id === 'fb' ? 1 : -1),
   commonPlayers: () => [],
@@ -58,4 +61,35 @@ test('farklı takımlar seçilirse tur normal akışta devam eder', () => {
   assert.equal(state.phase, 'countdown');
   assert.notEqual(state.result?.reason, 'sameClub');
   game.rooms.get(code).clearTimer(); // askıda kalan geri sayım zamanlayıcısını kapat
+});
+
+test('bir takım maç içinde oyuncu başına en fazla bir kere seçilebilir', () => {
+  const { game, a, b, code } = twoPlayerRoom();
+  game.handle(a, { t: 'pick', club: 'gala' });
+  game.handle(b, { t: 'pick', club: 'fb' });
+  const room = game.rooms.get(code);
+  room.clearTimer(); // 3 sn geri sayımı durdur
+  assert.deepEqual(lastState(a).usedClubs, ['gala']);
+  room.endRound(null, 'timeout'); // turu bitir
+  game.handle(a, { t: 'next' });
+  game.handle(b, { t: 'next' });
+  // aynı takımı tekrar seçemez
+  game.handle(a, { t: 'pick', club: 'gala' });
+  assert.equal(a.sent.filter((m) => m.t === 'error').pop().msg, 'Bu takımı bu maçta zaten seçtin.');
+  // rakip hâlâ seçebilir (kilit oyuncu başına)
+  game.handle(b, { t: 'pick', club: 'gala' });
+  assert.equal(b.sent.filter((m) => m.t === 'error').pop(), undefined);
+  room.clearTimer();
+});
+
+test('aynı takım iptalinde seçimler yakılmaz', () => {
+  const { game, a, b, code } = twoPlayerRoom();
+  game.handle(a, { t: 'pick', club: 'gala' });
+  game.handle(b, { t: 'pick', club: 'gala' }); // tur iptal
+  game.handle(a, { t: 'next' });
+  game.handle(b, { t: 'next' });
+  game.handle(a, { t: 'pick', club: 'gala' }); // yeniden seçebilir
+  assert.equal(a.sent.filter((m) => m.t === 'error').pop(), undefined);
+  assert.equal(lastState(a).players.find((p) => p.id === a.player.id).picked, true);
+  game.rooms.get(code).clearTimer();
 });

@@ -224,18 +224,19 @@ function renderPick(same) {
   area.innerHTML = `
     <div>
       <p class="phase-title">Takımını seç</p>
-      <p class="muted small">Rakibin hangi takımı seçtiğini geri sayımdan sonra göreceksin.</p>
+      <p class="muted small">Rakibin hangi takımı seçtiğini geri sayımdan sonra göreceksin. Bu maçta seçtiğin takımı bir daha seçemezsin.</p>
     </div>
     <input id="club-search" placeholder="Takım ara: Galatasaray, Inter…" autocomplete="off" autocapitalize="off" spellcheck="false">
     <div class="results" id="club-results"></div>`;
   const input = $('#club-search');
   const update = () => {
-    const found = searchClubs(input.value);
-    $('#club-results').innerHTML = found.map((c) =>
-      `<button class="club-opt" data-id="${c.id}"><span>${esc(c.name)}</span><small>${esc(c.country)}</small></button>`).join('');
+    const used = new Set(state.usedClubs || []);
+    $('#club-results').innerHTML = searchClubs(input.value).map((c) => used.has(c.id)
+      ? `<button class="club-opt" disabled><span>${esc(c.name)}</span><small>bu maçta seçtin</small></button>`
+      : `<button class="club-opt" data-id="${c.id}"><span>${esc(c.name)}</span><small>${esc(c.country)}</small></button>`).join('');
   };
   input.addEventListener('input', update);
-  input.addEventListener('keydown', (e) => { if (e.key === 'Enter') $('#club-results .club-opt')?.click(); });
+  input.addEventListener('keydown', (e) => { if (e.key === 'Enter') $('#club-results .club-opt:not([disabled])')?.click(); });
   $('#club-results').addEventListener('click', (e) => {
     const btn = e.target.closest('.club-opt');
     if (!btn) return;

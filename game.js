@@ -143,6 +143,7 @@ class Room {
       name,
       token: crypto.randomBytes(16).toString('hex'),
       score: 0,
+      used: new Set(), // bu maçta seçilen kulüpler (indeks)
       ready: false,
       lastGuessAt: 0,
       conn: null,
@@ -156,7 +157,7 @@ class Room {
     if (this.phase !== 'lobby') {
       this.clearTimer();
       this.phase = 'lobby';
-      this.players.forEach((p) => { p.score = 0; p.ready = false; });
+      this.players.forEach((p) => { p.score = 0; p.ready = false; p.used.clear(); });
       this.resetRound();
     }
     this.broadcast();
@@ -170,7 +171,7 @@ class Room {
     if (this.phase !== 'lobby' && this.phase !== 'over') return;
     if (this.players.length < 2) return send(player.conn, { t: 'error', msg: 'Rakip bekleniyor.' });
     if ([3, 5, 7, 10].includes(target)) this.target = target;
-    this.players.forEach((p) => { p.score = 0; });
+    this.players.forEach((p) => { p.score = 0; p.used.clear(); }); // yeni maç: takım kilitleri sıfırlanır
     this.round = 0;
     this.startPick();
   }
@@ -186,15 +187,22 @@ class Room {
     if (this.phase !== 'pick') return;
     const club = this.data.clubIndexOf(clubId);
     if (club < 0) return send(player.conn, { t: 'error', msg: 'Takım bulunamadı, sayfayı yenile.' });
+    if (player.used.has(club)) return send(player.conn, { t: 'error', msg: 'Bu takımı bu maçta zaten seçtin.' });
     this.picks.set(player.id, club);
     if (this.players.every((p) => this.picks.has(p.id))) this.startCountdown();
     else this.broadcast();
   }
 
-  // Süre biterse seçmeyen oyuncuya popüler kulüplerden rastgele biri verilir
+  // Süre biterse seçmeyen oyuncuya, bu maçta kullanmadığı popüler kulüplerden rastgele biri verilir
   autoPick() {
     for (const p of this.players) {
-      if (!this.picks.has(p.id)) this.picks.set(p.id, Math.floor(Math.random() * Math.min(80, this.data.clubs.length)));
+      if (this.picks.has(p.id)) continue;
+      const popular = Math.min(80, this.data.clubs.length);
+      let pool = [];
+      for (let i = 0; i < popular; i++) if (!p.used.has(i)) pool.push(i);
+      if (!pool.length) for (let i = popular; i < this.data.clubs.length; i++) if (!p.used.has(i)) pool.push(i);
+      if (!pool.length) pool = [Math.floor(Math.random() * popular)]; // teorik: her şey kullanılmışsa
+      this.picks.set(p.id, pool[Math.floor(Math.random() * pool.length)]);
     }
     this.startCountdown();
   }
@@ -203,6 +211,8 @@ class Room {
     const [a, b] = this.players.map((p) => this.picks.get(p.id));
     // İki oyuncu aynı takımı seçtiyse tur anlamsız olur: iptal edip yeni turdan devam
     if (a === b) return this.endRound(null, 'sameClub');
+    // Seçimler açıklandı: bu maçta bir daha seçilemesinler (iptal edilen tur yakmaz)
+    this.players.forEach((p) => p.used.add(this.picks.get(p.id)));
     this.answers = this.data.commonPlayers(a, b);
     this.setPhase('countdown', COUNTDOWN_MS, () => {
       if (this.answers.length === 0) this.endRound(null, 'noCommon');
@@ -289,6 +299,7 @@ class Room {
       phase: this.phase,
       round: this.round,
       target: this.target,
+      usedClubs: [...me.used].map((i) => data.clubs[i].id),
       deadline: this.deadline,
       now: Date.now(),
       you: me.id,
